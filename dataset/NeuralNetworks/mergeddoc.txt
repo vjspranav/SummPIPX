@@ -1,0 +1,1893 @@
+DeepPDF: A Deep Learning Approach to Analyzing PDFs
+Christopher Stahl, Steven Young, Drahomira Herrmannova, Robert Patton, Jack Wells
+Oak Ridge National Laboratory
+Oak Ridge, TN, USA
+fstahlcg, youngsr, herrmannovad, pattonrm, wellsjc g@ornl.gov
+Abstract
+Scientiﬁc publications contain a plethora of important information, not only for researchers but also for their managers and institutions.
+Many researchers try to collect and extract this information in large enough quantities that it requires machine automation. But because
+publications were historically intended for print and not machine consumption, the digital document formats used today (primarily PDF)
+have created many hurdles for information extraction. Primarily, tools have relied on trying to convert PDF documents to plain text for
+machine processing. While a number of tools exist, which can extract the contents of a PDF with acceptable accuracy, correctly labeling
+and piecing this data back together in a machine readable format is a signiﬁcantly harder task. In this paper we explore the feasibility of
+treating these PDF documents as images, we believe that by using deep learning and image analysis it may be possible to create more
+accurate tools for extracting information from PDF documents than those that currently exist.
+Keywords: deep learning, information extraction, scholarly publications
+Acknowledgments
+This manuscript has been authored by UT-Battelle, LLC
+and used resources of the Oak Ridge Leadership Comput-
+ing Facility at the Oak Ridge National Laboratory under
+Contract No. DE-AC05-00OR22725 with the U.S. Depart-
+ment of Energy. The United States Government retains and
+the publisher, by accepting the article for publication, ac-
+knowledges that the United States Government retains a
+non-exclusive, paid-up, irrevocable, world-wide license to
+publish or reproduce the published form of this manuscript,
+or allow others to do so, for United States Government pur-
+poses. The Department of Energy will provide public ac-
+cess to these results of federally sponsored research in ac-
+cordance with the DOE Public Access Plan1.
+1. Introduction
+Scientiﬁc publications have a wealth of information that
+can be useful for research, making management decisions,
+evaluating impact, etc. But often times this data is currently
+locked behind the PDF standard. While tools do exist to
+extract text and other information from PDF documents,
+the resulting output often falls short of the demands of re-
+searches. Captions, ﬁgures, tables, header, and footer data
+are among some of the features that cause problems for tra-
+ditional PDF extraction methods, as well as for tools for an-
+alyzing extracted information built on top of these methods.
+For example, (Beel et al., 2013) have reported that while
+many tools claim around 90% accuracy on title extraction,
+their experiments with existing tools have resulted in accu-
+racies between 50% to 70%. Furthermore, (Lipinski et al.,
+2013) have conducted a comparative evaluation of several
+tools including GROBID, which has revealed poorer per-
+formance on abstract extraction.
+In this publication we explore the possibility of creating
+PDF analysis tools that treat PDF documents as images.
+We believe that scientiﬁc publications have inherent struc-
+ture that is easy for humans familiar with them to separate.
+1http://energy.gov/downloads/
+doe-public-access-planWhen presented with an image of a fully redacted pub-
+lication researchers can visually determine the difference
+between a title, paragraph, reference section, headers, etc.
+Using the idea that PDF structure is a trainable idea, we
+theorize that a deep learning network can also be trained
+to separate the different sections of publications. Being
+able to separate out the different sections of publications
+is important because it will allow tools to accurately pro-
+vide raw text versions of individual sections of the docu-
+ment, without the noise created by traditional methods. To
+test this idea, we have utilized a set of 50 publications from
+PubMed (a subset of the PMC Sample 1943 dataset (Con-
+stantin et al., 2013)), which we have manually annotated
+(Section 3.), resulting in 407 labeled pages. We have then
+trained a Deep Neural Network to identify body text in the
+input (Section 4.). Our evaluation shows this approach of-
+fers high accuracy in correctly identifying body text while
+correctly rejecting other elements (Section 5.).
+2. Related Work
+In this section, we review previous literature relevant to our
+study, which we categorize according to the method used.
+First, we discuss methods for automated extraction of in-
+formation from research articles which use traditional ma-
+chine learning models such as Conditional Random Fields.
+Finally, we focus on methods which have utilized Deep
+Learning for related task.
+2.1. Traditional methods
+The analysis of the structure of documents has been stud-
+ied for a number of years ((Mao et al., 2003) have pro-
+vided a survey of some earlier approaches) and a number
+of freely available tools currently exist which can be used
+to extract information from scientiﬁc documents. These in-
+clude ParsCit2(Councill et al., 2008), GROBID3(Lopez,
+2009), CERMINE4(Tkaczyk et al., 2014), and most re-
+2http://parscit.comp.nus.edu.sg/
+3cloud.science-miner.com/grobid/
+4cermine.ceon.pl/cently OCR++5(Singh et al., 2016). While previous ap-
+proaches utilized models such as Hidden Markov Models
+(HMM) and Support Vector Machines (SVM) (Peng and
+McCallum, 2004), most of the current tools, such as ParsCit
+(Councill et al., 2008) and GROBID (Lopez, 2009), utilize
+Conditional Random Fields (CRF). CRFs are undirected
+graphical models trained to maximize a conditional prob-
+ability (Peng and McCallum, 2004) which can be used to
+segment and label sequence data (Lafferty et al., 2001).
+For example, ParsCit uses a CRF model to process refer-
+ence strings to identify parts such as author, title, and venue
+information (Councill et al., 2008). The authors have used
+several heuristics to identify the reference section and to
+split the section into separate references. The CRF model is
+then applied to the separate reference strings. The authors
+also use heuristics and regular expressions to extract the
+context in which each reference was mentioned in the text.
+Following the approach of (Peng and McCallum, 2004),
+GROBID used CRFs for both header and reference string
+parsing (Lopez, 2009). CERMINE combines several mod-
+els, mainly SVM which is used to identify zones (header,
+body, references, other) in the input text, and CRF which is
+used for parsing reference strings (Tkaczyk et al., 2014).
+OCR++ also uses CRFs (Singh et al., 2016). The tool
+uses several separate CRF models and combines them with
+handwritten heuristics.
+2.2. Deep Learning methods
+In recent years, neural networks have become the state-of-
+the-art in a variety of computer vision tasks (LeCun et al.,
+2015). These networks consist of neurons arranged in se-
+ries of layers, which learn to recognize successively higher-
+level representations. To the best of our knowledge, only
+one previous study has treated PDF documents as images
+and leveraged Deep Learning for this task (Siegel et al.,
+2018). They have utilized a modiﬁed version of the ResNet-
+101network to extract ﬁgures and captions from scientiﬁc
+documents. In contrast to this work, we currently focus on
+body text identiﬁcation.
+3. Data Collection
+The PMC Sample 1943 dataset compiled by Alexandru
+Constantine was selected for this project6(Constantin et al.,
+2013). This dataset consists of 1943 publications selected
+from 1943 different journals in the Pubmed repository. For
+the initial testing we selected a random sample of 50 docu-
+ments, giving us a total of 407 pages of publication data.
+Each section of the publication was assigned an RGB color
+code then using Adobe Acrobat’s redaction tool, a re-
+searcher manually applied redactions to each section of the
+PDF documents. A copy of the PDF was then saved giv-
+ing us a redacted or masked version of the document and
+the original document itself. The original document is con-
+verted to a grayscale PNG, while the masked document is
+converted to an RGB PNG. While this process for redac-
+tion is highly accurate, it is manually intensive. We believe
+5www.cnergres.iitkgp.ac.in/OCR++/home/
+6https://grobid.s3.amazonaws.com/PMC_
+sample_1943.zip
+Figure 1: Example of redacted document where redaction
+color indicates the type of content for each pixel.
+that while there are many different journals and publication
+venues, scientiﬁc publications cluster into a much smaller
+number of visual differences. Because of this we believe
+that a smaller dataset can be used for proof of concept and
+that results can be achieved with a much smaller data set
+than was is generally required for image analysis problems.
+4. Methods
+As the data has been processed such that we have an image
+of each page of each PDF and a pixel-wise label for the type
+of content corresponding to each pixel, the problem is nat-
+urally set up for semantic segmentation. Semantic segmen-
+tation is the process of assigning a label to each pixel of an
+image. A popular network for semantic segmentation tasks
+isU-Net (Ronneberger et al., 2015), and this is the network
+architecture we chose to utilize in this work. This network
+was chosen as it typically provides good performance with
+relatively few training examples.
+We used a U-Net implementation available at https:
+//github.com/shreyaspadhy/UNet-Zoo and the
+network is trained using softmax cross entropy loss. For
+this paper, we are only exploring a two class problem where
+one class is “paragraphs” and the other is “not paragraphs.”
+The former is deﬁned as the main text of the paper, and
+the latter includes titles, authors, author information, blank
+space, ﬁgures, tables, references, abstracts, etc. We target
+this problem since existing PDF text extraction tools often
+fail at separating the main text from these other text within
+the document, making the result challenging to read (Sec-
+tion 1.).
+5. Results
+In order to evaluate this method, we split the 407 pages
+of publications in to 366training examples and 41valida-
+tion examples. Figures 2 and 3 provide validation exam-(a) Example of properly rejecting tables.
+(b) Example of properly rejecting ﬁgure and caption.
+Figure 2: (Left) Input image. (Center) Network output. (Right) Ground truth.
+(a) Example of properly rejecting references.
+(b) Example of not properly rejecting references.
+Figure 3: (Left) Input image. (Center) Network output. (Right) Ground truth.ples of an input provided to the network, examples of net-
+work output, and ground truth target output. These results
+demonstrate impressive results with such a small dataset.
+In particular, the network is able to reject header and footer
+text extremely reliably. The network rejects most abstracts,
+ﬁgure captions and references, confusing only some where
+the text formatting is extremely similar to typical paragraph
+text. The per pixel classiﬁcation accuracy on the validation
+set was 94:32%, compared to a baseline of classifying each
+pixel as “not paragraph” which would provide 79:67% ac-
+curacy.
+6. Conclusion and Future Work
+In this paper we demonstrated that deep learning-based im-
+age analysis can be used to identify sections of scientiﬁc
+publications. Given the results from our current experi-
+ments, we feel that deep learning can be successfully used
+to enhance current PDF extraction methods, and based on
+our ﬁndings we plan to continue collecting data in order
+to further increase our networks results, as we feel many
+of the misclassiﬁed portions of text are due to insufﬁcient
+training data that does not currently characterize features
+such as reference sections and abstracts sufﬁciently.
+Our current results show that a deep learning network can
+successfully distinguish and learn the difference between
+the body text and other portions of a PDF document. The
+next step is to extend the approach to identifying each type
+of text (title, author, abstract, body text, etc.) rather than
+simply body text versus other. Additionally, we plan to in-
+crease the accuracy of our network by adding more data
+and to create an extraction tool that leverages the output
+of the deep learning network to extract text. While we are
+currently evaluating accuracy based on a per pixel count of
+estimated versus redacted image, an improved test of accu-
+racy would be to leverage such an extraction tool to identify
+the per character accuracy of this text extraction approach.
+7. Bibliographical References
+Beel, J., Langer, S., Genzmehr, M., and M ¨uller, C. (2013).
+Docear’s PDF Inspector: Title Extraction from PDF
+Files. In Proceedings of the 13th ACM/IEEE-CS joint
+conference on Digital libraries , pages 443–444. ACM.
+Constantin, A., Pettifer, S., and V oronkov, A. (2013). Pdfx:
+fully-automated pdf-to-xml conversion of scientiﬁc liter-
+ature. In Proceedings of the 2013 ACM symposium on
+Document engineering , pages 177–180. ACM.
+Councill, I. G., Giles, C. L., and Kan, M.-Y . (2008).
+ParsCit: an Open-source CRF Reference String Parsing
+Package. In LREC , volume 8, pages 661–667.Lafferty, J. D., McCallum, A., and Pereira, F. C. N. (2001).
+Conditional random ﬁelds: Probabilistic models for seg-
+menting and labeling sequence data. In ICML ’01 Pro-
+ceedings of the Eighteenth International Conference on
+Machine Learning , pages 282–289.
+LeCun, Y ., Bengio, Y ., and Hinton, G. (2015). Deep learn-
+ing.nature , 521(7553):436.
+Lipinski, M., Yao, K., Breitinger, C., Beel, J., and Gipp,
+B. (2013). Evaluation of header metadata extraction ap-
+proaches and tools for scientiﬁc PDF documents. In Pro-
+ceedings of the 13th ACM/IEEE-CS joint conference on
+Digital libraries - JCDL ’13 . ACM Press.
+Lopez, P. (2009). GROBID: Combining Automatic Bib-
+liographic Data Recognition and Term Extraction for
+Scholarship Publications. In International Conference
+on Theory and Practice of Digital Libraries , pages 473–
+474. Springer.
+Mao, S., Rosenfeld, A., and Kanungo, T. (2003). Docu-
+ment structure analysis algorithms: a literature survey.
+In Tapas Kanungo, et al., editors, Document Recognition
+and Retrieval X . SPIE, jan.
+Peng, F. and McCallum, A. (2004). Accurate informa-
+tion extraction from research papers using conditional
+random ﬁelds. In HLT-NAACL 2004: Human Language
+Technology Conference of the North America Chapter of
+the Association for Computational Linguistics, Proceed-
+ings of the Main Conference , pages 329–336.
+Ronneberger, O., Fischer, P., and Brox, T. (2015). U-net:
+Convolutional networks for biomedical image segmen-
+tation. In International Conference on Medical image
+computing and computer-assisted intervention , pages
+234–241. Springer.
+Siegel, N., Lourie, N., Power, R., and Ammar, W. (2018).
+Extracting Scientiﬁc Figures with Distantly Supervised
+Neural Networks. In To appear in ACM/IEEE Joint
+Conference on Digital Libraries in 2018 (JCDL 2018) .
+ACM/IEEE.
+Singh, M., Barua, B., Palod, P., Garg, M., Satapathy, S.,
+Bushi, S., Ayush, K., Rohith, K. S., Gamidi, T., Goyal, P.,
+and Mukherjee, A. (2016). OCR++: A Robust Frame-
+work For Information Extraction from Scholarly Arti-
+cles. International Conference on Computational Lin-
+guistics (COLING) , pages 3390–3400.
+Tkaczyk, D., Szostek, P., Dendek, P. J., Fedoryszak, M.,
+and Bolikowski, L. (2014). Cermine – Automatic Ex-
+traction of Metadata and References from Scientiﬁc Lit-
+erature. In Document Analysis Systems (DAS), 2014 11th
+IAPR International Workshop on , pages 217–221. IEEE.An Introduction To and Applications of Neural Networks
+Adam Oken
+May, 2017
+Abstract
+Neural networks are powerful mathematical tools used for many purposes including data classication, self-
+driving cars, and stock market predictions. In this paper, we explore the theory and background of neural networks
+before progressing to dierent applications of feed-forward and auto-encoder neural networks. Starting with the
+biological neuron, we build up our understanding of how a single neuron applies to a neural network and the
+relationship between layers. After introducing feed-forward neural networks, we generate the error function and
+learn how we minimize it through gradient decent and backpropagation. Applying this, we provide examples of
+feed-forward neural networks in generating trend lines from data and simple classication problems. Moving to
+regular and sparse auto-encoders, we show how auto-encoders relate to the Singular Value Decomposition (SVD),
+as well as some knot theory. Finally, we will combine these examples of neural networks to discuss deep learning,
+as well as look at some example of training network and classifying data with these stacked layers. Deep learning
+is at the forefront of machine learning with applications in AI, voice recognition and other advanced elds.
+1 Introduction to Neural Networks
+In this section we will introduce neural networks by rst discussing the biological model of a single neuron. We will
+then transfer that knowledge to a mathematical perspective of a single neuron, progressing further to a network of
+neurons. After learning what a neural network is, the architecture and applications will be briey discussed.
+1.1 Neurons
+Neural networks were designed to model how a neuron interacts with surrounding neurons, as such we will start o
+by talking about some biology. The human body is made up of trillions of cells with a diverse range of functions.
+Concentrating our introduction to one of the important systems of the body, we will focus on cells in the nervous
+system. The nervous system consists of two main categories of cells: neurons and glial cells. Glial cells are non-
+neuronal cells that maintain homeostasis, form myelin, and participate in signal transduction. More importantly and
+the focus of this introduction, neurons are the fundamental cell of the brain. The brain consists of many neurons,
+each made up of dendrites, a cell body, and an axon. Figure 1 shows the structure of a typical neuron with the three
+domains. Dendrites are branched, tree like, projections of a neuron that propagate the electrochemical stimulation
+received from other neural cells and sends them to the cell body. The cell body contains two important domains: the
+cell nucleus and the axon hillock. The axon hillock is a specialized domain of the cell body where the axon begins
+and contains a large number of voltage-gated ion channels. These channels are often the sites for action potential
+initiation. More specically, once the electrochemical signals are propagated to the cell body, they are summed in the
+axon hillock and once a triggering threshold is surpassed, an action potential propagates through the axon. Figure
+2 shows a depiction of the triggering threshold and the voltage output of a action potential.
+Figure 1: A typical neuron with the cell body, dendrite, axon, and terminal bulb
+1The nal part of a neuron is the axon. The axon is the long projection of a neuron that transmits information
+to dierent neurons, muscles or glands. For example, sensory neurons transmit signals back to the cell body via
+an axon to trigger a sensation in the brain. Neurons are distinguishable from other cells in a few ways. They can
+communicate with other cells via synapses. A synapse is a structure that allows neurons to pass electrical or chemical
+signals to other neurons. Altogether, neurons are complicated cells that can communicate with other neurons via
+synapses as well as other parts of the body via electrochemical signals that are propagated from dendrites to the
+axons.
+Figure 2: A graphical interpretation of action potentials and the threshold they need to attain in order to send a
+signal down the axon [11]
+Now let's look more closely at an isolated single neuron via a mathematical perspective to understand how it can
+be modeled as inputs and outputs that run through a node. We will start by looking at the dendrites or what we will
+dene as the input layer. Each dendrite propagates an electrochemical signal with dierent weights. Notationally, we
+denendendrites in the input layer nodes as x1;x2;:::;x nand the corresponding nweights asw11;w12;:::;w 1nwhere
+wijrefers to the weight taking xjto the node i. Figure 3 shows the structure of a single neuron with three input
+nodesx1,x2,x3and their corresponding weights w1,w2,w3(note that since there is only one node, the value for i
+was left out, but it would be w11,w12,w13). Do note that the notation for the weights and nodes will become more
+complicated as more structure is added to the network. This notation will be addressed later, but for understanding
+how a single neuron functions we will make these simplications. Continuing on, each dendrite and its corresponding
+weight are connected to a cell body or as we will dene a node through an edge. Edges are connections between two
+nodes such that when a signal passes through an edge, it is multiplied by the corresponding weight. All the weighted
+signals are then summed along with a bias term bfor each single node. We can think of this bias term as the resting
+state of the neuron. Additionally, since multiple signals come to a given node, we will assume that they arrive at
+the same time. Once summed, we apply an activation function to transform the input into a nal output value. The
+activation function is usually a nonlinear transfer function which will be described more later on.
+Figure 3: A mathematical depiction of a signal neuron [8]. There are three input values or nodes x1,x2,x3with
+corresponding weights w11,w12,w13. They are multiplied, summed, and then an activation function is applied to
+them so there is a single output.
+2Describing a single neuron mathematically, we see that it is a function from RntoR. Using the notation we just
+learned above, we start with the input xand multiply the inputs by their corresponding weights. So,
+x!(w11;w12;:::;w 1n)2
+666664x11
+x12
+x13
+...
+x1n3
+777775=w11x1+w12x2+:::+w1nxn=wx+b
+We then apply an activation function to the node, call it where(wx+b) is the output of a single neuron. The
+transfer function, otherwise known as an activation function, corresponds to the activation state of the node [7]. As
+was mentioned earlier, a voltage potential must build up enough signal in the cell body to send a signal down the
+axon. The transfer or activation function is what is simulating this biological eect in a neural network with respect
+to the node and output signal. Altogether, this is how we model a single neuron. A neural network is a collection
+of single neurons. Thus, by understanding how a single neuron works, we can obtain a better grasp of how a neural
+network would function.
+1.2 Network Architecture
+A neural network consists of a series of layers. The rst layer is called the input layer and if the input xi2Rnthen
+the layer has nnodes. In Figure 4, xi2R3so there are three nodes in the input layer. The nal layer is called the
+output layer and if yj2Rmthen the layer has mnodes. In Figure 3, yj2R1so there is one node in the output
+layer. In between the two aforementioned layers are some number of the hidden layers each with some number of k
+nodes. We dene the architecture of the neural network by the number of nodes in each layer. For example, Figure
+4 is a depiction of a neural network with 3 nodes in the input layer, 4 nodes in the rst hidden layer, 4 nodes in the
+second hidden layer, and 1 node in the output layer. This network would be described as a 3-4-4-1 neural network.
+Input #1
+Input #2
+Input #3OutputHidden
+layer 1 Input
+layerHidden
+layer 2Output
+layer
+Figure 4: A 3-4-4-1 neural network.
+1.3 Application and Purpose of Training Neural Networks
+A neural network is a software simulation that recognizes patterns in data sets [11]. Once you train a neural net,
+that is give the simulation enough data to recognize the patterns, it can predict outputs in future data. We can
+think of training a neural network as the creation of a function between a given domain and range. Once trained,
+any data within the domain we provide can be mapped to the functions range. A simple example of a neural network
+in action is the classication of data. We are given a data set containing six characteristics of 200 wines (the input
+would be a 6 by 200 matrix) as well as knowing the properties of 5 dierent types of wine. We can train the neural
+network on 50 dierent wines and then the generated function will be able to classify the other 150 wines into the
+ve types of wine (the output would be a 5 by 200 matrix). Neural networks can be a very powerful tool to analyze
+and predict data.
+One important feature we must mention about training a neural network is how a network learns. There are two
+types of learning: supervised learning and unsupervised learning [1]. A learning algorithm of a neural network is said
+to be supervised learning when the output or target values are known [6]. This was the case in the aforementioned
+example about the classication of wine. We knew the 5 types of wine that the 200 bottles were being classied
+into. On the other side, unsupervised learning doesn't \know" the outputs or target values. The learning process
+has to nd patterns within the data in order to output values. Unsupervised learning is used in many complex
+systems, including data processing, modeling, and classication. The goals for either type of learning are easier said
+3y= tanh(x)y= arctan(x)
+y= 1=(1 +e x)
+ 4 2 2 4
+ 2 112
+xy
+Figure 5: This graph shows the three transfer functions that are discussed above. In blue is the function 1 =(1 +e x)
+which is bounded above at one and below at zero. In red is the hyperbolic tangent function which is bounded above
+at one and below at negative one. In green is the inverse tangent function that is bounded above by =2 and below
+by =2.
+then done, we nd the best weights and biases for a given neural network that produce the most accurate function
+approximation.
+2 Feed-Forward Neural Networks
+A feed-forward neural network creates a mapping from Rn!Rmthat is considered supervised learning. For feed-
+forward neural networks, we are given the target values for the given problem. The mapping consists of an initial
+signal (denoted x), prestates (denoted Pj), transfer function ( (r) also called a sigmoidal function because of its
+shape with requal to to some prestate Pj), and states (denoted Sj). To compute the nal output of the neural
+network, we need to calculate each of these states for each layer. Since each layer is dependent on the previous, we
+need to start at the input layer and work towards the output layer. Before we show how to complete the forward
+pass of the network, that is compute the output, it is important to know the relationship between the dierent states
+and layers. The generalized relationship between the states and two adjacent layers of a network is:
+Si 1!Pi=WiSi 1+bi!Si=(Pi)
+where bicorresponds to the vector of biases for layer i,Wiis the matrix corresponding to all the weights for layer
+i, andS0=x, the input layer. We will use the relationships that we just stated to compute the forward pass of
+the feed-forward neural network. Once the forward pass is completed, we can compute the error between the given
+target values and our output. From there, we can decrease the error by changing the weights and biases which will
+be discussed later.
+2.1 The Transfer Function
+The transfer function, otherwise known as an activation function, corresponds to the activation state of the node
+[7]. As mentioned earlier, the transfer function is simulating the biological eect of overcoming a voltage potential
+to activate an axon. This aects the outputs coming from a node. Mathematically, the transfer function (r) has to
+be dierentiable, increasing, and have horizontal asymptotes. rcorresponds to the prestate in which the activation
+function is generating an output for. A couple of common functions for (r) are:
+(r) = tan 1(r);  (r) =1
+1 +e r;  (r) = tanh(r) =e2r 1
+e2r+ 1
+These are the most common functions and some are used in the program Matlab. Each of the aforementioned have
+dierent asymptotes but they are generally bounded at  =2, 1, 0, 1, and/or =2. These three activation functions
+are graphed in Figure 5 below.
+2.2 Computing a Forward Pass
+We will now compute the forward pass of a feed-forward neural network. As mentioned earlier in the paper, the
+initial signals from the input layer exist in Rnand are denoted x1;x2;:::;x n. We dene these values as the initial
+4state condition S0. To get to the rst prestate, we multiply the initial state conditions by the matrix of weights, W1,
+and add the corresponding biases b1. Thus, the rst prestate ( P1) =W1x+b1. Then we apply the transfer function
+to get the next state condition, (W1x+b1) =(P1) =S1. This completes the calculations for the input layer. We
+will now do the calculations for the second layer of the network or rather, the rst hidden layer. We will compute the
+state conditions just as we did before, however we will use the state condition from the previous layer (input layer)
+for the calculation of the prestate. We will get the second prestate ( P2) by multiplying by the corresponding weights
+and adding the biases to the state condition from the input layer. So, P2=W2S1+b2and then we will apply the
+transfer function to compute the second state, (W2S1+b2) =(P2) =S2. Scaling this up to a complex neural
+network, this relationship can be used for as many hidden layers as needed. This is accomplished by increasing the
+indices of each prestate, weight, bias, and state variable. This is visualized by:
+x!P1=W1x+b1!S1=(P1)
+S1!P2=W2S1+b2!S2=(P2)
+S2!P3=W3S2+b3!S3=(P3)
+S3!P4=W4S3+b4!S4=(P4)
+...
+Sn 1!Pn=WnSn 1+bn!Sn=(Pn)
+Once we reach the output layer, the nal state condition becomes the output of the neural network. Thus, we have
+completed a forward pass of a neural network. Furthermore, we can obtain a overall function for the forward pass
+of the network. We can do this since the nal state condition is the composition of many previous functions. For
+example, the function of a neural network with one hidden layer would be:
+F(xi) =W2((W1xi+b1)) +b2
+Now we will take the theory we learned above and apply it to a simple neural network to compute a forward pass.
+We will use the 2-2-1 neural network in Figure 6 below. The values we need are: The initial conditions x= [0:35;0:9],
+along with the matrices of weights
+W11=0:1
+0:8
+;W 12=0:4
+0:6
+;W 2=0:3
+0:9
+andt= 0:5
+For clarication, the prestate and state notation is PijandSijwherePis the prestate and Sis the state of the jth
+node of layer irespectively. Remember we need to calculate the prestate and state conditions for each node. Let us
+begin the computations using logsig as the transfer function [4]. P01=S01= 0:35 andP02=S02= 0:9 because we
+are at the input layer. Moving to the hidden layer, the rst node has:
+P11=WT
+11[S01S02] = [0:1 0:8]0:35
+0:9
+= 0:755 and
+S11=(P11) =1
+1 +e P11= 0:320
+The second node in the hidden layer has:
+P12=WT
+12[S01S02] = [0:4 0:6]0:35
+0:9
+= 0:68 and
+S12=(P12) =1
+1 +e P12= 0:336
+Now we are at the output layer,
+P2=WT
+2[S11S12] = [0:3 0:9]0:320
+0:68
+= 0:708 and
+S2=(P2) =1
+1 +e P12= 0:330
+Thus, the initial output of the neural network is 0.330. This value is a bit lower than the target value of 0.5, but we
+can modify the weights and biases later to achieve a better result.
+5Input #1
+Input #2 OutputHidden
+layerInput
+layerOutput
+layer
+Figure 6: The 2-2-1 neural network we will use as an example throughout the feed-forward neural network section.
+For values: x= [0:35;0:9],W11=0:1
+0:8
+,W12=0:4
+0:6
+,W2=0:3
+0:9
+, andt= 0:5.
+2.3 Gradient Descent and Backpropagation of Error
+The goal of a neural network is to construct an accurate function between a given range and domain. Our goal is to
+build the function so that the determined outputs equal the given target values, F(xi) =tiwhereFis the function,
+xithe inputs, and tithe target values. The typical method for nding such a function is to create an error function,
+and then nd the parameters that minimize it. Since we know the targets tiand the outputs yi=F(xi) (as we just
+described earlier), our error function will be the sum of squared error between these two terms [5]:
+E=1
+2pX
+i=1jjti yijj2
+Looking at the error function further, we know that the outputs yiare dependent on the weights and biases. So, the
+true parameters of the error function that will be modied are the matrices of weights Wiand the bias vectors bi.
+Thus, we can rewrite the error function to portray this fact:
+E(Wi;bi) =1
+2pX
+i=1jjti yijj2
+where the error function is dependent on the weight matrices Wiand the bias vectors bifor each layer.
+To decrease the error of the neural net, we will use the gradient of the error function. We take the derivative of
+the error function and change the weights and biases to move in the opposite direction of the gradient. Moving in the
+opposite direction of the gradient achieves the fastest descent. Recall that moving in the direction of the gradient is
+the fastest ascent, so we will do the opposite to achieve the fastest descent. This method is called gradient descent
+where the parameter u(remember the parameters of the function are the weights Wiand biases bi) is updated by:
+unew=uold dE
+du
+whereis the learning rate and the equation updates in the opposite direction of the gradient. To determine the
+termdE=du we use backpropagation. There are other techniques, but backpropagation of error is an ecient way
+computing the rate of change of the error in a network. For backpropagation, we rst run a forward pass through
+the network to determine all the state conditions for each node. Then we go backwards, determining the partial
+derivatives through the network to get the error term l
+mfor each node [12]. From this, we can get a formula to
+update the weight Wl
+mnwhich connects node nin layerl 1 to nodemin layerl:
+Wl
+mn=Wl
+mn+dE
+dW=Wl
+mn+l
+mSl 1
+n
+where l
+mis an error term that measures how much node min layerlwas responsible for any errors in our output
+andSl 1
+nis the state of node nin layerl 1. l
+mis specically dened as L
+j= (tj yj)0(PL
+j) for the output layer
+L and recursively for layers l= 1;2;:::;L 1 as l
+m=0(Pl
+m)P
+j2l+2l+1
+jWl+1
+jm. For clarication in the previous
+summation, jis indexing each node in the next layer, l+ 2, that connects to node min layerl+ 1.
+For updating the biases, we use the rule:
+bl
+k=bl
+k+dE
+db=bl
+k+l
+k
+This is the theory behind nding the weights and biases that produce a universal approximator function. In practi-
+cality, the program Matlab can train a neural network to nd a function in a few lines of code.
+6Continuing with the simple 2-2-1 neural network example in Figure 6, we will run a backwards pass to determine
+the values we need to increase or decrease each weight by. In eect, this will decrease the error between output of the
+network and the target values. Note in this example there are no bias terms. Return to Figure 6 to see the weights
+and inputs for the network. For the backward pass we need to compute the  values and state conditions for each
+node. Recall that we already calculated the state conditions when computing the forward pass, thus we only need to
+determine the  values. Additionally, before we start, we need to determine the function 0. Since we dened our
+transfer function as the logsig function, the derivative is simply:
+0(Pij) =(Pij)(1 (Pij)) =Sij(1 Sij)
+Moving to the computations, we can calculate the derivatives for each node. It follows:
+0(P01) = 1; 0(P02) = 1; 0(P11) = 0:320(1 0:320) = 0:218;
+0(P12) = 0:336(1 0:336) = 0:223; 0(P2) = 0:330(1 0:330) = 0:221
+Next, we can calculate the  for each node. As we dened previously,  for the output layer is:
+3
+1= (t1 y1)0(P3
+1) = (0:5 0:330)(0:221) = 0:03757
+Moving inward in the network, we can calculate  for each node in the hidden layers:
+2
+1= (0:218)(0:3)(0:0375) = 0:00245;
+2
+2= (0:223)(0:9)(0:0375) = 0:00753;
+1
+1= (1)((0:1)(0:00245) + (0 :4)(0:00754)) = 0 :00326;
+1
+2= (1)((0:8)(0:00245) + (0 :6)(0:00754)) = 0 :00648
+Now we can use the formulas above to determine the change in weights and biases. We will use a learning rate of
+= 0:1. We will start with the change in weights:
+W2
+11=W2
+11+2
+1S01= 0:1 + (0:1)(0:00245)(0:35) = 0:100086
+W2
+12=W2
+12+2
+1S02= 0:8 + (0:1)(0:00245)(0:9) = 0:8002
+W2
+21=W2
+21+2
+2S01= 0:4 + (0:1)(0:00753)(0:35) = 0:4003
+W2
+22=W2
+22+2
+2S01= 0:6 + (0:1)(0:00753)(0:9) = 0:6007
+W3
+11=W3
+11+3
+1S11= 0:3 + (0:1)(0:03757)(0:320) = 0:3012
+W3
+12=W3
+12+3
+2S12= 0:9 + (0:1)(0:03757)(0:336) = 0:9013
+We have thus completed one full forward and backward pass through the neural network. The updated weights are
+above and these will decrease the error function. This means we updated the weights to create a more \accurate"
+mapping between the inputs and outputs. The updated network will output a value closer to the given target value.
+One would continue to run forward and backward passes with the updated weights in order to decrease error function
+until a desired value is achieved.
+2.4 Training a Feed-Forward Neural Network
+To train a feed-forward neural net, we need a data set and the targets for the data set. From there, we can pick the
+size and quantity of the hidden layers for establishing accuracy. In Matlab, the code to call a simple feed-forward
+neural net would be:
+x = data
+t = targets
+hiddensize = number of nodes in the hidden layer
+net = feedfoward(hiddensize)
+net = train(net, x, t)
+output=sim(net,x)
+7For an example of training a feed-forward neural network we can creates inputs and targets that the neural
+network can work with. To create data points, we can create 50 equally spaced points between  2 and 2. These
+will be the inputs, let's call them X. We can create a function with random error above and below it to get target
+data, we will call these T. For our purpose, we will use the function T= cos(P) + 0:2randn(size( P)) which adds a
+random error term to the cosine function between 0 and 0 :2. The feed-forward neural network with 10 nodes in the
+hidden layer will produce a smooth trend line (which should loosely represent the cosine function) rather than a line
+that travels through each point. When the line travels through each point we have \over t" the neural network.
+Over-tting is when the network algorithm follows the data too closely rather than nding a trend line through the
+data. In an over-t algorithm, we would not see a smooth trend line, but rather a very jagged line that hits too
+many data points specically. Figure 7 shows the dierence between the three functions: the altered data, the neural
+networks training, and the cosine function. We see that the neural network produced a smooth curve that emulates
+a combination of the cosine function and the altered function.
+Figure 7: The plots show the dierence between the three functions: the altered data (in circles), the neural networks
+training (smooth line), and the cosine function (diamonds).
+2.5 Over Fitting a Neural Network
+As mentioned in the previous section, over-tting is when the network algorithm follows the data too closely rather
+than nding a trend line through the data. In an over-t algorithm, we would not see a smooth trend line, but rather
+a very jagged line that hits too many data points specically. A more general method of thinking about over-tting is
+given by Matlab's documentation [9], \over-tting occurs when the error on the training set is driven to a very small
+value, but when new data is presented to the network the error is large. The network has memorized the training
+examples, but it has not learned to generalize to new situations". This problem occurs in a number of situations.
+For instance, if there are too many hidden nodes in a single layer or too many hidden layers.
+In Figure 8, we took the previous example of a feed-forward network and added enough nodes to the hidden
+layer to attain over-tting. Our original network architecture was 1-10-1 while our new net is 1-400-1. When we
+added these hidden nodes, we allowed the training of the network to be very eective and in result, the network goes
+through almost every point in the skewed data rather than nding the trend. This is a clear result of over-tting.
+When training in Matlab, the program attempts to avoid over-tting by ending the network training early. The
+early stopping procedure splits the data into three dierent sets: training, validation, and testing. The training set
+is used for computing the gradient as well as updating the network weights and biases. This is were the bulk of the
+learning is done. The validation set monitors the error of the training set during the training. The validation error
+normally decreases during the initial phase of training, as does the training set error. However, when the network
+begins to over-t the data, the error on the validation set typically begins to rise. At the point when the error on
+the validation set increases, the training stops because that is when over-tting starts to occur. The nal data is the
+testing set which is data that has not been used in the training or validation checks. This set of data is put through
+8the network after training to determine how accurate the network training/learning was.
+after the network has sbeen trained.
+Figure 8: The plots show the dierence between the three functions: the altered data (in circles), the neural networks
+training (fairly jagged line), and the cosine function (diamonds). The important take away of this graph is that the
+neural network over-t the data, hitting nearly every skewed data point.
+2.6 How to Choose the Number of Nodes and Hidden Layers
+For a feed-forward neural network, choosing the number of nodes in each layer and how many hidden layers you need
+is a dicult and surprisingly under-documented problem. The goal of choosing the correct amount of nodes and
+hidden layers is to train the network so it maps new inputs accurately and doesn't over-t the data. The creators
+of MatLab's help documentation state, \For a network to be able to generalize, it should have fewer parameters
+than there are data points in the training set. In neural networks, as in all modeling problems, we want to use
+the simplest network that can adequately represent the training set. Don't use a bigger network when a smaller
+network will work (a concept often referred to as Occam's Razor)." [2] This provides more general description for
+choosing the amount of nodes. Altogether, choosing the amount of hidden nodes is a very empirical choice which
+may require optimization through a lot of testing. One result that is helpful to know comes from the Universality
+Theorem which is discussed later. The important result regarding node selection is that a single hidden layer can
+produce the same results as a more complicated architecture. This means that a simple network architecture can
+work for very complicated problems.
+2.7 A Fun Classication Problem
+In this section we are going to look at and attempt to classify images of cats and dogs from the Internet. The data set
+we will look at is a set of 25 ;000 images of cats and dogs that was created by kaggle (https://www.kaggle.com/c/dogs-
+vs-cats/data). An important aspect of this le is that all the images are dierent sizes (i.e. 400 by 321 pixels versus
+450 by 234 pixels). Thus, the rst task is to standardize the size of each image. There are two methods we took
+to standardize the images in Matlab. The rst method is to set the image in the upper left corner and add zeros
+to get to a target size. The second method is to scale the image to the target size through one of Matlab's built in
+functions. To create the input data matrix for this problem, the second technique was chosen as it would produce
+less static error in the background. Additionally, we change the picture of a cat or dog to a black and white image.
+In Figure 9, there are two examples of non-standardized images of a cat and dog.
+9Figure 9: Two sample images of a cat and dog from kaggle's data set. Note that the two images are not the same
+pixel size, but were scaled to be equivalent for viewing purposes.
+Once we have standardized the images, we can construct a simple classier neural network in Matlab. We view
+the accuracy of the classication through a confusion matrix. A confusion matrix is a visual method that provides
+the percent occurrence that the classication matched the target values. In the matrix, the diagonal values indicate
+a correct classication, that is a dog for dog or cat for cat. O the diagonal indicates an incorrect classication, that
+is the lower left corner indicates we classied a cat as a dog and visa versa for the upper right corner. The goal of
+the classication is to see the majority of the data along the diagonal. In Figure 10, we have the confusion matrix
+for this classication problem which indicates the results as described above. In the confusion matrix, the number 0
+represents cats and 1 represents dogs.
+Figure 10: A confusion matrix of the cat and dog classication problem. 0 represents cats and 1 represents dogs.
+Looking at this classication, the results are very bad. The classication by the feed-forward network was correct
+55% of the time and wrong 45% of the time for the testing set of data. It incorrectly identied cats as dogs 21.7%
+of the time and dogs as cats 23.3% of the time. Thus, looking at the overall classication percentages, we see this
+classication isn't much better than guessing with a 50/50 probability. The neural network did not successfully
+create a function that can correctly classify cats and dogs.
+103 Auto-Encoders
+An auto-encoder network is an unsupervised learning algorithm where the input and output layers are the same size.
+Additionally, the three layer network sets the input values equal to the target values. This makes an auto-encoder
+network an approximation of the identity function [10]. This might seem pointless, but by placing constraints on
+the network, we can determine important structure about the data. Three constraints applied to auto-encoders are
+decreasing/increasing the size of the hidden layer, imposing constraints on the weights of the network, and imposing
+a sparsity constraint on the hidden units. In this paper, we will mention two types of auto-encoders; a regular
+auto-encoder (or plainly, an auto-encoder) and a sparse auto-encoder. The dierence between the two is the size of
+the hidden layer. An auto-encoder will take the hidden layer to a smaller dimension than that of the input/output
+layer. For example, an identity map of an 100-50-100 network would be a regular auto-encoder. In contrast, a sparse
+auto-encoder will take the hidden layer to a larger dimension. For instance, a 2-25-2 network mapping the inputs
+to themselves would be a sparse auto-encoder. We will go into detail of these types of networks and some of their
+properties in the following sections.
+3.1 Auto-Encoders
+As mentioned above, an auto-encoder network is an approximation of the identity function that uses a smaller
+dimension for its hidden layer. As an example of decreasing the size of the hidden layer, suppose we have a 4-2-4
+auto-encoder network such as the network in Figure 7. This would force(encode) the 4 inputs to a lower dimensional
+representation of 2 points. Then the decoding function must reconstruct the 4 outputs from only 2 points. From
+this decoding, the algorithm can determine if there is any correlated data or patterns in the data which simplify
+the decoding. Obviously, an example with more nodes or inputs would be much more interesting, but the smaller
+example demonstrates the concept. Another simple example of an auto-encoder network is a feed-forward network
+with one hidden layer that is a lower dimension then the equivalent input/output dimension.
+Figure 11: A 4-2-4 auto-encoder network
+If we look closer at an auto-encoder, there is an additional term added to the error function that we are attempting
+to minimize. The new error function becomes:
+E(Wi;bi) =1
+2pX
+i=1jjti yijj2+
+2nl 1X
+l=1slX
+i=1sl+1X
+j=1(W(l)
+ji)2
+wherenlis the number of layers in the network and slis the number of nodes in layer l. The rst term is the sum of
+squared error which we have seen before in feed-forward neural networks. The second term is the L 2regularization
+term wereis the coecient for the L 2regularizar. The L 2regularization term that we added to the cost function
+prevents over-tting by controlling (generally decreasing) the weights of the neural network. Over-tting is when
+the network algorithm follows the data too closely rather than nding a trend line through the data. In an over-t
+algorithm, we would not see a smooth trend line, but rather a very jagged line that hits too many data points
+specically. The L 2regularization term has more implications when we reach sparse auto-encoders later. Now we
+will explore some implications of auto-encoders in various applications.
+3.2 Relationship between Auto-Encoders and Principal Component Analysis
+3.2.1 A Brief Introduction to Principal Component Analysis (PCA)
+To understand Principal Component Analysis we rst need to understand the Singular Value Decomposition or SVD.
+We can use the SVD factorization on any matrix to determine the rank of the matrix and all four matrix subspaces
+[6].
+11Theorem 3.1 The Singular Value Decomposition (SVD): Let Abe anymnmatrix with rank r, thenA=UVT
+whereUis an orthogonal mmmatrix, is a diagonal mnmatrix, and Vis an orthogonal nnmatrix.
+The SVD gives us many properties of the matrix A. The diagonal entries of the  matrix give us the singular values
+which are equal to the square roots of the eigenvalues. Also these values are increasing from right to left, so the rst
+singular value is the greatest singular value. The UandVTmatrices correspond to the eigenvectors in increasing
+order as well. Furthermore, once we have the SVD factorization computing the four fundamental subspaces of a
+matrix A is simple. A basis for the columnspace of A is the rst rcolumns of Uor symbolically as [ ui]r
+i=1. This will
+be important later. A basis for the nullspace of Ais [vi]n
+i=r+1. A basis for the rowspace of Ais [vi]r
+i=1. A basis for
+the nullspace of ATis [ui]m
+i=r+1. Furthermore, we can calculate a reduced SVD.
+Theorem 3.2 The reduced SVD: Let Abe anymnmatrix with rank randA=UVTbe the SVD of A with
+rankr, thenA=~U~~VT=Pr
+i=1iuivT
+iwhere ~Uis an orthogonal mrmatrix, ~is a diagonal rrsquare matrix,
+and ~Vis an orthogonal nrmatrix.
+The reduced SVD is signicant because it reduces the matrices to the size of the rank. We will see the importance
+of the reduced SVD with determining the best basis. First we will state the theorem of the best basis.
+Theorem 3.3 The Best Basis Theorem: Xis annpmatrix ofppoints in Rnwith mean x2Rn.Xmis thenp
+matrix of mean subtracted data. Cis the covariance of X,C= (1=p)XmXT
+m. Then the best orthonormal basis is
+given by the leading keigenvectors of C, for anyk.
+Now we can connect the best basis computation from the covariance matrix to the SVD. Consider the SVD of the
+npmatrixXwith rankk. We get
+C=1
+p 1XXT=1
+p 1UVTVTUT=U(1
+p 12)UT
+Comparing this to the best basis theorem above, we see the best basis vectors for the column space of Xare the
+rstkcolumns of Uand the best basis vectors for the rowspace of Xare the rst kcolumns of V. This is a very
+powerful result for data analysis because we can determine the best set (best representative) vectors for any given
+data set. The process of nding the best basis is the same as nding the principal components. Thus, we have just
+described Principal Component Analysis (PCA).
+3.2.2 The Relationship Between PCA and Auto-Encoders
+Now that we have an elementary understanding of principal component analysis, we can determine the relationship
+between auto-encoders and PCA. We need to rst recognize that both operations reduce the data to a lower dimension.
+PCA uses the reduced SVD which reduces the data down to the dimension k, wherekis the rank of the matrix. On
+the other side, an auto-encoder encodes the data into a lower dimension. If we encode the data down to a hidden
+layer withknodes, where kis the rank, then we get a subspace that is approximately equal to that produced by
+PCA. To do this computation, we extract the matrix that encoded the data to dimension kof the auto-encoder and
+compare it to the best basis for the column space from the SVD. When compared, we should see the two subspaces
+are equal within a small error. To compare them we will produce an image of the two matrices. In Figure 13, the
+top two images are the best two vectors of the column space from the SVD. The bottom two images are the vectors
+that are used to encoder the auto-encoder. Comparing these two images we see they are very similar to each other.
+One method to determine how similar these images are to each other is to calculate the reconstruction error. The
+reconstruction error is dened asPjjXi proj(Xi)jj2for the SVD andPjjXi f(Xi)jj2for the auto-encoder. The
+two errors from the picture were determined to be 1 :6695104for the SVD and 1 :6547104for the auto-encoder.
+Since the reconstruction errors are nearly the same, we can conclude that the images are approximately equal. Thus,
+we have just shown that the subspace formed by taking the rst kvectors of the column space from the SVD is
+approximately equal to the vectors formed from encoding an auto-encoder neural network.
+Another metric to compute the error between the two subspaces is to calculate the angle between the two
+subspaces. We call the angles between the vectors within the subspaces the principle angles. Recall from linear
+algebra that to compute the angle between two vectors, we compute uv=(jujjvj). For a quick example and visual,
+we will calculate the angle between a plane and a line in 3-d. Let's take Fto be the line x+ 3y= 0 andGto be the
+planex+y 2z= 0. We rst determine the direction vector of the line and the normal vector of the plane which
+are (1;3;0) and (1;1; 2) respectively. Now we will do the computation, so:
+j(1;3;0)(1;1; 2)j
+j(1;3;0)jj(1;1; 2)j=4p
+60radians
+Figure 12 shows the 3-d graph of the two planes intersecting.
+12Figure 12: A 3-d plot showing the two functions x+ 3y= 0 andx+y 2z= 0. The angle between the two planes
+is a4p
+60
+To compute the principle angles between the vectors from two dierent subspaces we will take advantage of the
+following theorem:
+Theorem 3.4 LetFandGbe subspaces of Rmand
+p=dim(F)dim(G) =q1:
+If the columns of Uf2RmpandUG2Rmqdene orthonormal bases for FandGrespectively, then
+max
+u2Fmax
+u2GuTv= max
+y2Rpmax
+z2RqyT(QT
+FQG)z
+We are essentially commuting what we discussed above ( uv)=(jujjvj), but we can take advantage of some helpful
+properties from the SVD. From the SVD, we know we are using two orthonormal vectors the expression becomes
+the dot product between uandv. If we take the dot product of the maximum uandvwe would get the maximum
+angle. What the above theorem is describing is the maximum uandvcorrespond to the maximum yandzfrom
+the SVD of a matrix Cwhich is described next. Further more, from this theorem we get the following result,
+The SVD of YT(QT
+FQG)Z=YT(C)Z= diag(cos( k))
+From this theorem we can get a matrix describing the angles between the subspaces.
+9:1985 18:3827
+13:7385 3:5537
+The important values in the matrix are the diagonals corresponding to the angles between the rst vectors in each
+subspace and the second vectors in each subspace. We see the rst basis vector of the column space from the SVD
+is about 9:2 degrees o from the rst basis vector generated from the encoder matrix. Similarly, the second basis
+vectors are only 3 :6 degrees o from each other. Notice that the values are close to zero which would indicate that
+the two subspaces are the nearly the identical. Because the two vectors that we are comparing come from two very
+dierent analytical methods we should expect some error, especially when encoding 109 vectors into two. Thus, we
+see that the two methods, PCA and auto-encoders, have a very similar subspace that connects the two mathematical
+subjects.
+13Figure 13: The top two images are constructed from the the best two vectors of the columns space from the SVD
+(PCA). Specically, each picture is either the rst or second column of the U matrix from the reduced SVD. Each
+vector is then reconstructed into an image of 160 by 190 pixels. The bottom two images are constructed from the
+encoding of the auto-encoder. The encoder matrix was the same dimension as the reduced SVD, a matrix of two
+vectors.
+As another example of an auto-encoder, we will encode the 109 images from the previous example where we
+demonstrated the relationship between PCA and auto-encoders into a lower dimension, view the weights of the
+encoding function, and then view the reconstructed images. The rst part of Figure 14 corresponds to the encoding
+matrix down to 2-d. This graph represents the path of the weights for the auto-encoder. The second image shows
+25 reconstructed images from the auto-encoder. Notice we lost a fair bit of data from the auto-encoder since we
+projected it down into two dimensions.
+14Figure 14: The images produced from the encoding function from a sparse auto-encoder using the best two basis's
+from the aforementioned auto-encoder to R25. We represent the 25 vectors as the above 25 images.
+3.3 Sparse Auto-encoders
+Now we will describe a sparse auto-encoder. We rst set a sparsity parameter of our choosing (usually small),
+whereis the activation of the neuron. Next dene
+j=1
+mmX
+i=1[a(2)(x(i)
+j ]
+to be the average activation of hidden unit j. We would like to enforce the constraint j=as the sparsity
+constraint. To do this, we add an extra penalty to the cost function. This is the main important distinction with a
+sparse auto-encoder. We will add two regularization terms to the sum of squared errors. We get:
+E(Wi;bi) =1
+2pX
+i=1jjti yijj2+
+2nl 1X
+l=1slX
+i=1sl+1X
+j=1(W(l)
+ji)2+s2X
+j=1log
+j+ (1 ) log1 
+1 j
+The rst term is the sum of squared error which we have seen before. The second term is the L 2regularization
+term were is the coecient for the L 2regularizer. This was the regularization term we added for the regular
+15auto-encoders. The third term is the sparsity regularization term that corresponds to the sparsity constraint .
+The valuecorresponds to the average activation of each hidden neuron. By setting the to some number, we
+are constraining the activation of each hidden node to be close to . The third term we added to the cost function
+enforces that constraint. The following sections present examples of sparse auto-encoding. These include the MNIST
+data set and untying a torus knot.
+3.4 Unknotting the knot
+As an application of auto-encoders, we will untie a knot. As a quick aside, we will dene a knot and an unknot in the
+context of knot theory. A knot is dened as a closed, non-self-intersecting curve that is embedded in three dimensions
+and cannot be untangled to produce a simple loop (i.e., the unknot) [14]. Thus, when we are talking about unsolved
+knots, we are referring to unknots. An example of an unknot is a crinkled up rubber band. The rubber band is an
+unknot because it can always be made into a non-crossing loop by pulling it apart. The general strategy for untying
+the knot is to use a sparse auto-encoder to encode the knot into a higher dimensional space. Once the knot is in a
+higher dimension, let's say 12 dimensional space (it only needs to be in 4 dimensional space to unknot itself though),
+the knot will untie itself. Once the knot is untied, we use a regular auto-encoder to encode the higher dimensional
+representation into a 2 or 3 dimensional space. Upon graphing the lower dimensional representation, we will see a
+loop or line that never crosses itself. This signies that the knot has been untied and is now the unknot.
+The knot that we will focus on is the (4 ;3) torus which is a function of three parametric equations:
+x= cos(3t)(3 + cos(4t)); y= sin(3t)(3 + cos(4t));andz= sin(4t) with 0t2
+The knot in 3 dis shown below in the top image of Figure 11. Next, we used a sparse auto-encoder to encode the
+knot into a 12 dimensional space. In 12 dimensional space, the knot will become the unknot. We then encode the
+unknot down to a 2 and 3 dimensional representation using an auto-encoder to view it. The bottom graph within
+Figure 11 is the unknot corresponding to the (4 ;3) torus from above.
+Figure 15: The (4 ;3) torus knot formed by the above parametric equations plotted in 3  d. Under it is the unknot
+in 3 d.
+163.5 The MNIST Dataset
+The MNIST (Mixed National Institute of Standards and Technology) data set is a collection of handwritten digits.
+There are 60 ;000 training images and 10 ;000 testing images. The set of images comes from a combination of two
+NIST databases: Special Database 1 (SD1) which consists of digits written by high school students and Special
+Database 3 (SD3) which consists of digits written by employees of the United States Census Bureau. Each SD
+database contributes 30 ;000 images which are 20 x 20 pixels to the set. This data set is commonly used for training
+and testing machine learning (i.e., neural networks). The goal of the training is to classify each of the hand written
+digits to its corresponding label or true number. Thus far, the best training obtained a 0.21 percent error rate by
+using an ensemble of 5 convolutional neural networks (a type of feed-forward neural network). Below in Figure 16
+are four sample images from the MNIST data set.
+Figure 16: The four images correspond to four 20x20 matrices that are within the MNIST data set. The corresponding
+labels to the images are 0 ;4;1;9 in order from top left to bottom right.
+Now we will look at how a sparse auto-encoder can encode the images to a higher dimension. In Figure 17,
+we encoded the data set up in dimension. Resulting in each image becoming \specialized". More specically, each
+neuron corresponding to an image specializes by responding to some feature that is only present in a small subset of
+the training examples. This is because we can think of each node corresponding to a single image, if there are more
+nodes than images, each node can specialize on a special feature of the images. Thus, in Figure 17 we see each image
+has the general shape of a number, but not exactly the same shape.
+Figure 17: These images correspond to the 1000 images in the hidden layer of the sparse auto-encoder.
+174 Deep Nets and Deep learning
+In this section we will return to the cats and dogs example as well as the MNIST data sets presented in the previous
+sections. In each section we constructed a simple classier network for cats and dogs or a sparse auto-encoder for
+the MNIST data set. Now we will construct a deep network to classify the data sets and compare the dierences.
+A deep network is a series of stacked feed-forward, softmax, and auto-encoder layers which together perform deep
+learning. The ability to stack multiple networks creates a much better training for the deep net as compared to an
+individual network. Another dierence between deep nets and the other networks discussed in this paper is the huge
+size of a deep net. Deep nets have become a much more powerful tool recently due to the vast improvements in
+processing and data storage technologies. Researchers can use massive amounts of data to train the deep net. For
+example, Google can train a voice recognition deep net with hundreds of thousands of hours of people talking. This
+creates a much more powerful recognition tool.
+4.1 Softmax Algorithm
+The softmax algorithm is a probability function that distributes a kdimensional vector xof arbitrary real values
+into akdimensional vector (x) of real values in the range (0 ;1) that add up to 1 [13]. The function is:
+(x)j=ezj
+PK
+k=1ezk
+The softmax algorithm is often used as the nal layer of neural network for a a classication problem. Since the
+function returns a real value within a known distribution. Furthermore, if we set the maximum value for each
+distribution in the data set, with each piece of data a column vector, to 1 and the rest to 0, then we can use that
+maximum value in the vector as our classication output. For example, in the cats and dogs data set, each image
+corresponded to a column vector. The maximum value in the column vector was set to one and the other set to zero.
+If the one value was in the top row, the image corresponded to a cat and if in the bottom, it corresponded to a dog.
+Altogether, a softmax layer is often the nal layer in a deep net because it is a accurate method to classify data.
+4.2 Cats and Dogs Classier with a Deep Net
+As described above, a deep net is a series of stacked networks. In this example, we move from a regular feed-forward
+classier which performed terribly and institute a deep net. The deep net here will consist of two auto-encoder
+networks followed by a softmax layer. The rst auto-encoder has 10 hidden nodes and the second has 3 hidden
+nodes. Figure 18 shows the confusion matrix for the training of the deep net. We see that 66 :4% of the time it
+classied cats and dogs correctly while 33 :6% of the time, it classied incorrectly. Although this is not nearly a
+perfect classication, the network is recognizing the images of cats and dogs more. Also, the deep net is working
+much better than the simple feed-forward, which was essentially guessing the classication.
+Figure 18: The confusion matrix from the deep net classier for the cats and dogs dataset.
+184.3 MNIST Data Set Classier with a Deep Net
+Using a deep net, we can classify the images within the MNIST data set to their corresponding numeric values
+between 0 and 9. For this deep net, we used two auto-encoders followed by a soft max layer. The auto-encoders
+had hidden layers of 100 and 50, so the network reduced the 60,000 images to 100, then to 50 and classied them
+using a softmax layer corresponding to the 10 numbers. Figure 19 shows the confusion matrix for the testing of the
+neural network with about 72% being classied correctly and 28% being classied incorrectly. Additionally, some of
+the interesting results from the confusion matrix seemed to cause slight confusion. The output from the deep net
+confused the numbers 0, 3, and 8 with the number 5. We see this because the output of the deep net mis-classied
+zero as ve 133 times, mis-classied three as ve 177 times and eight as ve 103 times. This is likely because the
+number 0, 3, and 8 look very similar to 5 when they are poorly drawn. One other big error in classication was the
+mis-classication of 6 as 9, a likely error because the numbers are rotations of each other.
+Figure 19: The confusion matrix from the deep net classier for the MNIST dataset.
+A recent article was published regarding deep learning that has signicant implications for machine learning.
+The article posited that the networks were memorizing the data rather than learning the general trends. This was
+shown by training two deep nets, the rst on the MNIST data set and the second on the GTSRB data set. For
+reference, the GTSRB data set is a set of over 39,000 images which consist of 43 dierent kinds of trac signs. Once
+each deep net was trained, the testing images were run with correct classication rates of 98.7-99.2% for the MNIST
+and 94.8-98.08% for the GTSRB. The testing set of images were then multiplied by negative one to create their
+corresponding negative image. The negative images should be correctly identied by the deep net since the patterns
+for the images were kept exactly the same. However, when they tested the negative images on the deep net, the
+network completely failed to correctly classify the negatives. The classication rates did not get above 16% and had
+a low of 3.79%. This suggests that the deep net was memorizing the images because it could not classify an image
+with the same pattern, but with inverted colors. Here, we have replicated their results to the best of our abilities.
+In Figure 20 we see four negative images from the MNIST data set and going back to Figure 16, we see four positive
+19images from the data set. Upon classication, using the same deep net as described in the aforementioned MNIST
+classication section, we get a classication rate of 1.3% for the negative images. Our positive classication rate was
+72.6% which shows that the deep net could not classify the negative images.
+Figure 20: Four negative images from the MNIST dataset. They are simply the inverse colors. Note the images are
+mean subtracted which may have caused the unusual \whiteness" in the images.
+Figure 21: The resulting confusion matrix when negative images are run through a deep net that was trained on
+positive images. This is a terrible training, possibly showing memorization. The positive training results for the deep
+net were 76% correct and 24% incorrect classication.
+20This result has signicant implications for machine learning, if indeed the deep nets are memorizing the images
+rather than learning the trends. If deep nets are not learning the trends, but rather memorizing patterns, deep net
+based algorithms and AI will be greatly impacted. Furthermore, future research and applications would be eected
+because the current theory regarding deep nets could be misunderstood.
+5 Conclusion and Final Result of Neural Networks
+In this paper, we have provided examples for dierent types of neural networks that have tremendous applications
+in mathematics. One of the most important characteristics of a neural network has been suggested throughout the
+paper in theory and in dierent examples. The result is as follows: A feed-forward neural network is a universal
+function approximator. We can nd a neural network that will approximate any function with an arbitrarily small
+error. Additionally, the neural network needs only a single hidden layer. This result is an implication of the Universal
+Approximation Theorem.
+Theorem 5.1 The Universal Approximation Theorem states that a feed-forward network with a single hidden layer
+containing a nite number of neurons can approximate continuous functions on compact subsets of Rn, under mild
+assumptions on the activation function [3].
+Knowing that we can approximate any continuous function with a simple feed-forward neural network with only
+one hidden layer is a tremendous tool in mathematics. Once we train the network on some data, we can use it to
+approximate whatever the training data was based on. Thus, the applications to neural networks are endless. Addi-
+tionally, with the vast improvements of deep learning and deep nets, these networks are being used for tremendously
+complicated programs. For example, deep networks are currently being used as the main algorithm in the eld of
+articial intelligence as well as voice recognition. In conclusion, we have presented the reader with an introduction to
+the theory and useful applications of feed-forward neural networks, auto-encoder networks, and deep nets. Now we
+will leave the reader with more complex and real life applications of these powerful tools to extend the reach of this
+paper. Google's articial intelligence systems are based on deep nets which are used for classifying objects, trans-
+lating languages using webcams, computer drawing recognition, as well as other applications. Please visit Google's
+articial intelligence website at:
+https://aiexperiments.withgoogle.com/
+References
+[1] Jochen Fr ohlich. Supervised and unsupervised learning, Jan 2017.
+[2] Hagan, Martin T., Demuth, Howard B., Beale, Mark Hudson, De Jes us, Orlando. Neural Network Design .
+eBook, 2014.
+[3] Hassoun, Mohamad H. Fundamentals of Articial Neural Networks . MIT Press, 1995.
+[4] Douglas R. Hundley. Backproperror, Jan 2017.
+[5] Douglas R. Hundley. Ffneural, Jan 2017.
+[6] Douglas R. Hundley. Linear algebra fundamentals, Jan 2017.
+[7] Horst-Michael Gross Klaus Debes, Alexander Koenig. Transfer functions in articial neural net-
+works - a simulation-based tutorial. Brains, Minds, & Media , Jul 2005. http://www.brains-minds-
+media.org/archive/151/supplement/bmm-debes-suppl-050704.pdf.
+[8] Nicholas Lincoln. Identifying subatomic particles with neural networks, Feb 2017.
+[9] Matlab. Math works, Apr 2017.
+[10] Andrew Ng. sparseautoencoder, Jan 2017.
+[11] Wikipedia. Action potential, Jan 2017.
+[12] Wikipedia. Backpropagation, Jan 2017.
+[13] Wikipedia. Softmax function, Jan 2017.
+[14] Wolfram Math World. Knot, Apr 2017.
+216 Matlab code/Appendix
+In this section we present the Matlab code for each of the examples. Additionally, the rst section in the appendix is
+essentially a \how to" for writing an auto-encoder in Matlab. A description of each parameter within the auto-encoder
+class is outlined and the operations to optimize the function are briey described.
+6.1 Auto-Encoders in Matlab
+In this section we will provide a description of all the parameters that go into Matlab's auto-encoder function and
+how to build an auto-encoder with specied values. Let's start by reviewing the dierent variables inside the auto-
+encoder function in the order they appear. To initiate the training of the auto-encoder, we must rst call the function:
+trainAutoencoder. The rst input in the function is the data matrix, which is then followed by the hidden layer size.
+For auto-encoding we choose a dimension for the hidden layer smaller than what the data is represented in, and for
+sparse auto-encoding we choose a dimension larger. To set the hidden layer size you can either input a positive integer
+or specify a variable with a positive integer value. Our function now looks like: trainAutoencoder(X, hiddenSize)
+for some data X and hidden layer size. Moving on, we will format the rest of the arguments in the function as the
+argument's name followed by its value in pairs and single quotes: 'name1', 'value1', ... 'name2', 'value2', ... 'nameN',
+'valueN'. Now we will go through the possible arguments. We can choose our transfer function for the encoder and
+decoder functions. The name we provide is either 'EncoderTransferFunction' or 'DecoderTransferFunction'. For the
+corresponding encoder value, we choose from the linear function 'satlin' or the logistic function 'logsig'. For the
+corresponding decoder value, we choose from the linear function 'purelin', the positive saturating linear function
+'satlin', or the logistic function 'logsig'.
+As an example, if we want to train an auto-encoder with linear transfer functions we would use the code in Figure
+22.
+autoenc= trainAutoencoder(Xmean,hiddensize,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+Figure 22: This is an example of an auto-encoder function with linear encoding and decoding transfer functions.
+The default setting, if not specied for both functions, is 'logsig'. Continuing on, we can specify the maximum
+number of training epochs by the value pair: 'MaxEpochs', positive integer value. The default maximum is 1000.
+Next, we can specify the coecient for the L 2weight regularizer which controls the relative importance between the
+sum of squared error and L 2regularization term. The L 2regularization term helps prevent over tting by controlling
+the magnitude of the weights. This should typically be quite small, the default setting in Matlab is 0.001. Generally,
+start by decreasing the coecient for the L 2weight regularizer to optimize the training. To set this term we state the
+value pair: 'L2WeightRegularization', .02. Continuing on, we will now dene the sparsity proportion or as mentioned
+above, the sparsity parameter i. The value pair to set the sparsity parameter, a positive scalar in the range of 0
+to 1, is: 'SparsityProportion', 0.1. Generally, a low sparsity parameter increases specialization of each neuron and
+increases sparsity. Next, we will set the sparsity regularization coecient which controls the impact of the sparsity
+regularizer term in the cost function. The value for the coecient is a positive scalar value with the default set to
+1. To change the variable, we would state the value pair: 'SparsityRegularization', 2. The value pair arguments
+above are the important variables to optimizing a training for both types of auto-encoders. In Figure 23, we can
+see an example of the code one would use to train an auto-encoder neural network. Additionally, we indicated some
+suggestions and possible trends for the values of each argument. These are great starting points, but only with
+testing can we optimize the auto-encoder network.
+The following value pair arguments are additional commands to alter the training but are almost always left as
+default. This is because they are either vitally important to the training or very unimportant. Thus, we will only
+state the commands and their default settings (default means they are assumed without indicating them) so we know
+they exist. The rst is to specify the costs/error/loss function which for auto-encoders is stated as: 'LossFunction',
+'msesparse'. The second is showing the training window where the default is true. If we don't want to see the
+training, we could state the value pair: 'ShowProgressWindow', false. The third is specifying the training algorithm
+The default is scaled conjugate gradient descent stated as: 'TrainingAlgorithm', 'trainscg'. The fourth is a true or
+false statement to indicate the use of GPU for training. The default is false and is called by: 'UseGPU', false.
+One we have trained the auto-encoder using the arguments from above, we can use the data in various methods.
+Two important tools we can use are the encode and decode functions. The encoding function will return the matrix
+that encoded the input data into the hidden layer. To call this function we write: Z= encode(autoenc ;X) where
+22autoenc= trainAutoencoder(Xmean,hiddensize,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+'MaxEpochs',1200,...
+'L2WeightRegularization',0.01,...
+'SparsityRegularization',4,...
+'SparsityProportion',0.10);
+Figure 23: This is an example of an auto-encoder function with linear transfer function, a maximum of 1200 epochs,
+and specied regularization terms.
+Zwill be the encoding matrix, autoenc is the trained auto-encoder, and Xis the input data. On the other side,
+the decode function will return the matrix that decoded the hidden layer into the output layer. Similarly, to call
+the decode function we write: Y= decode(autoenc ;M) whereYwill be the decoding matrix, autoenc is the trained
+auto-encoder, and Mis the data encoded by autoenc. An example of the application of these two function can be
+seen with the sparse auto-encoder example above with 30 images. After optimizing the training of the network, we
+used the matrix from the encoding function to return a matrix that contained the 30 images. Another function that
+we can use is the predict function. Predict returns the predictions Yfor the input data Xusing the auto-encoder
+autoenc. It is called by writing: y= predict(autoenc ;X) where the variables are as above. The next few functions
+are helpful to know, but are used less often. They all use the trained auto-encoder autoenc. The rst will be the
+function view which allows us to view the auto-encoder. To call it write: view(autoenc). Next, we can view the
+weights by calling the unction plotweights(autoenc). We can also convert an auto-encoder object into a network
+object by using: network(autoenc). Finally, we can generate a function to run the auto-encoder autoenc on input
+data. We call: generatefunction(autoenc). With these tools we can use auto-encoders for many dierent problems.
+6.2 Feed-Forward Example
+%Create some artificial data
+P=linspace(-2,2,50); %creates 50 equally space points between -2 and 2
+T=cos(pi*P)+0.2*randn(size(P)); %the function we are trying to emulate
+% We'll build a 1-10-1 network and train it:
+net=feedforwardnet(10); %10 nodes in hidden layer
+net=configure(net,P,T); % Initialize weights and biases
+% Training:
+net=train(net,P,T); %Training command
+y2=sim(net,P); % Network output after training
+6.3 Showing The Relationship Between The SVD and Auto-Encoders
+%% PCA using the SVD
+load author
+X11 = double(Y1);
+Y1mean=mean(X11,2);
+X1mean=X11-repmat(Y1mean,1,109);
+[U S V]=svd(X1mean,'econ');
+%The best basis vectors for the column space of X are the first k
+%columns of U. Similarly, the best basis vectors for the row space of
+%X are the first k columns of V .
+figure(1)
+for j=1:2
+subplot(1,2,j)
+imagesc(reshape(U(:,j),120,160)); colormap(gray); axis equal; axis off
+end
+23%% Autoencoders
+load author
+hiddensize=(2);
+X = double(Y1);
+Ymean=mean(X,2);
+Xmean=X-repmat(Ymean,1,109);
+Xmean=Xmean';
+autoenc= trainAutoencoder(Xmean,hiddensize,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+'L2WeightRegularization',0.01,...
+'SparsityRegularization',4,...
+'SparsityProportion',0.10);
+%%
+z=encode(autoenc,Xmean);
+z=z';
+% v=decode(autoenc,z);
+% figure(1)
+%The two pictures in this figure are created from the best basis's of the
+%columns space of the data from the U matrix from the SVD
+p=[z(:,2) z(:,1)];
+%%
+for j=1:2
+subplot(1,2,j)
+imagesc(reshape(U(:,j),120,160)); colormap(gray); axis equal; axis off
+end
+figure(2)
+%The two pictures in this figure are created from the encoding of the
+%autoencoder with 2 nodes in the hidden layer.
+for j=1:2
+subplot(1,2,j)
+imagesc(reshape(p(:,j),120,160)); colormap(gray); axis equal; axis off
+end
+%notice they are very similiar but come from two very different places.
+%%
+theta=subspace(U(:,1:2),p(:,1:2))
+norm(X1mean-U(:,1:2)*U(:,1:2)'*X1mean)
+norm(Xmean-predict(autoenc,Xmean))
+U(:,1:2)'*p(:,1:2)
+7 Sparse Auto-Encoder
+load author
+X = double(Y1);
+Ymean=mean(X,2);
+Xmean=X-repmat(Ymean,1,109);
+Xmean=Xmean/30000;
+autoenc1= trainAutoencoder(Xmean, 2, ...
+'L2WeightRegularization',0.001,...
+'SparsityRegularization',1,...
+'SparsityProportion',0.05,...
+'ScaleData',false);
+z=encode(autoenc1,Xmean);
+plot(z(1,:),z(2,:))
+24%%
+z2=predict(autoenc1,Xmean);
+for j=1:30
+subplot(6,5,j)
+imagesc(reshape(z2(:,j),120,160)); colormap(gray); axis equal; axis off
+end
+7.1 Unknotting the Torus Knot Problem
+t=linspace(0,2.*pi);
+x=cos(3.*t).*(3+cos(4.*t));
+y=sin(3.*t).*(3+cos(4.*t));
+z=sin(4.*t);
+X=[x; y; z];
+figure(1)
+plot3(x,y,z)
+Ymean=mean(X,2);
+Xmean=X-repmat(Ymean,1,100);
+%%
+autoenc1= trainAutoencoder(Xmean,12,...
+'EncoderTransferFunction','logsig',...
+'DecoderTransferFunction','purelin',...
+'MaxEpochs',1000,...
+'L2WeightRegularization',0.01,...
+'SparsityRegularization',4,...
+'SparsityProportion',0.1);
+%%
+Y=encode(autoenc1,Xmean);
+autoenc2= trainAutoencoder(Y,2,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+'MaxEpochs',1000,...
+'L2WeightRegularization',0.01,...
+'SparsityRegularization',4,...
+'SparsityProportion',.1);
+%%
+Y1=encode(autoenc2,Y);
+autoenc3= trainAutoencoder(Y1,12,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+'MaxEpochs',1000,...
+'L2WeightRegularization',0.01,...
+'SparsityRegularization',4,...
+'SparsityProportion',.1);
+%%
+Y2=encode(autoenc3,Y1);
+autoenc4= trainAutoencoder(Y2,3,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+'MaxEpochs',1000,...
+'L2WeightRegularization',0.01,...
+'SparsityRegularization',4,...
+'SparsityProportion',.1);
+%%
+Y3=encode(autoenc4,Y2);
+m=Y3(1,:);
+n=Y3(2,:);
+25o=Y3(3,:);
+figure(2)
+plot3(m,n,o)
+7.2 MNIST Data set code for Matlab
+%%
+%The function readMNIST organizes the files into there 20x20 matrices with
+%the corresponding label
+[imgs,label]=readMNIST('train-images.idx3-ubyte','train-labels.idx1-ubyte',60000,0);
+images = loadMNISTImages('train-images.idx3-ubyte');
+labels = loadMNISTLabels('train-labels.idx1-ubyte');
+Ymean=mean(images,2);
+Xmean=images-repmat(Ymean,1,60000);
+%%
+image=reshape(images, 28,28,60000);
+%%
+imagess=images(:,1:55000);
+imagess=imagess/2;
+labels=labels'
+labelss=labels(:,1:55000);
+timagess=images(:,55001:60000);
+timagess=timagess/5;
+tlabelss=labels(:,55001:60000);
+%%
+figure(1)
+for j=1:4
+subplot(2,2,j)
+imagesc(reshape(images(:,j),28,28)); colormap(gray); axis equal; axis off
+end
+%%
+image=images(:,1:5000);
+xmeantest=Xmean(:,1:4000);
+%%
+autoenc= trainAutoencoder(images,1000,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+'MaxEpochs',200,...
+'L2WeightRegularization',0.001,...
+'SparsityRegularization',4,...
+'SparsityProportion',.15);
+%%
+z=encode(autoenc, xmeantest');
+z=z';
+for j=1:30
+subplot(6,5,j)
+imagesc(reshape(z(:,j),28,28)); colormap(gray); axis equal; axis off
+end
+%%
+mnist=predict(autoenc,imagetest);
+for j=1:10
+subplot(2,5,j)
+imagesc(reshape(mnist(:,j),28,28)); colormap(gray); axis equal; axis off
+end
+%%
+hiddenSize1 = 100;
+autoenc1 = trainAutoencoder(imagess,hiddenSize1, ...
+26'MaxEpochs',400, ...
+'L2WeightRegularization',0.00005, ...
+'SparsityRegularization',4, ...
+'SparsityProportion',0.15, ...
+'ScaleData', false);
+feat1 = encode(autoenc1,imagess);
+hiddenSize2 = 50;
+autoenc2 = trainAutoencoder(feat1,hiddenSize2, ...
+'MaxEpochs',100, ...
+'L2WeightRegularization',0.0002, ...
+'SparsityRegularization',4, ...
+'SparsityProportion',0.1, ...
+'ScaleData', false);
+feat2 = encode(autoenc2,feat1);
+hiddenSize2 = 50;
+t1=eye(10);
+ttrain=t1(:,labelss+1);
+softnet = trainSoftmaxLayer(feat2,ttrain,'MaxEpochs',400);
+deepnet = stack(autoenc1,autoenc2, softnet);
+%%
+y = deepnet(Ttimagess);
+t=eye(10);
+tttrain=t1(:,Ttlabelss+1);
+plotconfusion(tttrain,y);
+%%
+y = deepnet(timagess);
+%%
+plotconfusion(tlabelss,y);
+7.3 Negatives for MNIST Dataset
+%%
+%The function readMNIST organizes the files into there 20x20 matrices with
+%the corresponding label
+[imgs,label]=readMNIST('train-images.idx3-ubyte','train-labels.idx1-ubyte',60000,0);
+images = loadMNISTImages('train-images.idx3-ubyte');
+labels = loadMNISTLabels('train-labels.idx1-ubyte');
+Ymean=mean(images,2);
+Xmean=images-repmat(Ymean,1,60000);
+Xmeanneg=-1*Xmean;
+%%
+image=reshape(images, 28,28,60000);
+%%
+imagess=Xmean(:,1:25000);
+imagess=imagess/2;
+labels=labels';
+labelss=labels(:,1:25000);
+timagess=Xmean(:,55001:60000);
+timagess=timagess/2;
+tlabelss=labels(:,55001:60000);
+nimagess=Xmeanneg(:,1:25000);
+nimagess=nimagess/2;
+nlabelss=labels(:,1:25000);
+ntimagess=Xmeanneg(:,55001:60000);
+ntimagess=ntimagess/2;
+ntlabelss=labels(:,55001:60000);
+27Timagess=[imagess nimagess];
+Ttimagess=[timagess ntimagess];
+Tlabelss= [labelss nlabelss];
+Ttlabelss=[tlabelss ntlabelss];
+%%
+figure(1)
+for j=1:4
+subplot(2,2,j)
+imagesc(reshape(Xmeanneg(:,j),28,28)); colormap(gray); axis equal; axis off
+end
+%%
+image=images(:,1:5000);
+xmeantest=Xmean(:,1:4000);
+%%
+autoenc= trainAutoencoder(images,1000,...
+'EncoderTransferFunction','satlin',...
+'DecoderTransferFunction','purelin',...
+'MaxEpochs',200,...
+'L2WeightRegularization',0.001,...
+'SparsityRegularization',4,...
+'SparsityProportion',.15);
+%%
+z=encode(autoenc, xmeantest');
+z=z';
+for j=1:30
+subplot(6,5,j)
+imagesc(reshape(z(:,j),28,28)); colormap(gray); axis equal; axis off
+end
+%%
+for j=1:10
+subplot(2,5,j)
+imagesc(reshape(Xmean(:,j),28,28)); colormap(gray); axis equal; axis off
+end
+%%
+hiddenSize1 = 100;
+autoenc1 = trainAutoencoder(Timagess,hiddenSize1, ...
+'MaxEpochs',400, ...
+'L2WeightRegularization',0.0001, ...
+'SparsityRegularization',4, ...
+'SparsityProportion',0.15, ...
+'ScaleData', false);
+feat1 = encode(autoenc1,Timagess);
+hiddenSize2 = 50;
+autoenc2 = trainAutoencoder(feat1,hiddenSize2, ...
+'MaxEpochs',100, ...
+'L2WeightRegularization',0.002, ...
+'SparsityRegularization',4, ...
+'SparsityProportion',0.1, ...
+'ScaleData', false);
+feat2 = encode(autoenc2,feat1);
+hiddenSize2 = 50;
+t1=eye(10);
+ttrain=t1(:,Tlabelss+1);
+28softnet = trainSoftmaxLayer(feat2,ttrain,'MaxEpochs',400);
+deepnet = stack(autoenc1,autoenc2, softnet);
+y = deepnet(Ttimagess);
+%%
+t=eye(10);
+tttrain=t1(:,Ttlabelss+1);
+plotconfusion(tttrain,y);
+7.4 Cats and Dogs
+% Read files file1.txt through file20.txt, mat1.mat through mat20.mat
+% and image1.jpg through image20.jpg. Files are in the current directory.
+targetSize = [200 200];
+folder = cd;
+j=[]
+for k = 0:500
+jpgFilename = sprintf('dog.%d.jpg', k);
+imageData = imread(jpgFilename);
+cat1_resized = (imresize(imageData, targetSize));
+c1=reshape(double(cat1_resized(:,:,1)),200*200,1) ;
+j=[j c1];
+end
+%%
+for k = 0:500
+jpgFilename = sprintf('cat.%d.jpg', k);
+imageData = imread(jpgFilename);
+cat1_resized = (imresize(imageData, targetSize));
+c1=reshape(double(cat1_resized(:,:,1)),40000,1) ;
+j=[j c1];
+end
+%%
+net=patternnet(10);
+T=[ones(1,501) zeros(1,501)];
+[net,tr] = train(net,j,T);
+testX = j(:,tr.testInd);
+testT = T(:,tr.testInd);
+testY = net(testX);
+testIndices = vec2ind(testY)
+%%
+figure, plotconfusion(testT,testY)
+%% First autoencoder
+hiddenSize = 15;
+autoenc1 = trainAutoencoder(j,hiddenSize,...
+'L2WeightRegularization',0.001,...
+'SparsityRegularization',4,...
+'SparsityProportion',0.05,...
+'DecoderTransferFunction','purelin');
+% Extract the "features" in the hidden layer
+features1 = encode(autoenc1,j);
+view(autoenc1);
+%% Second Autoencoder
+hiddenSize2 = 4;
+autoenc2 = trainAutoencoder(features1,hiddenSize2,...
+'L2WeightRegularization',0.001,...
+'SparsityRegularization',4,...
+'SparsityProportion',0.05,...
+'DecoderTransferFunction','purelin',...
+'ScaleData',false);
+% Extract the features on the hidden layer
+29features2 = encode(autoenc2,features1);
+view(autoenc2);
+%% The Softmax Layer
+%Train a softmax layer:
+softnet = trainSoftmaxLayer(features2,T,'LossFunction','crossentropy');
+view(softnet);
+n=sim(softnet,features2) %kinda cool to see the outputs from the three back to back networks
+%% The deep net
+% Stack the encoders together to get the deep network:
+deepnet = stack(autoenc1,autoenc2,softnet);
+[deepnet,tr]=train(deepnet,j,T);
+photos=deepnet(j);
+%% This is the confusion matrix for the deep net
+plotconfusion(T,photos)
+30Introduction To
+Neural Networks
+•Development of Neural Networks date back to the early 1940s. It experienced an 
+upsurge in popularity in the late 1980s. This was a result of the discovery of new techniques and developments and general advances in computer hardware technology. 
+•Some NNs are models of biological neural networks and some are not, but historically, much of the inspiration for the field of NNs came from the desire to produce artificial systems capable of sophisticated, perhaps ``intelligent", computations similar to those that the human brain routinely performs, and thereby possibly to enhance our understanding of the human brain. 
+•Most NNs have some sort of “ training " rule. In other words, NNs “learn " from 
+examples (as children learn to recognize dogs from examples of dogs) and exhibit some capability for generalization beyond the training data.Neural Network Techniques
+•Computers have to be explicitly programmed
+–Analyze the problem to be solved .
+–Write the code in a programming language.
+•Neural networks learn from examples
+–Norequire ment of an explicit description of the problem .
+–Noneed a programmer.
+–The neural computer to adapt itself during a training period, based on 
+examples of similar problems even with outa desired solution to each 
+problem. After sufficient training the neural computer is able to relate the 
+problem data to the solutions, inputs to outputs, and it is then able to offer a viable solution to a brand new problem.
+–Able to generalize or to handle incomplete data.NNs vs Computers
+Digital Computers
+•Deductive Reasoning . We apply known 
+rules to input data to produce output.
+•Computation is centralized, synchronous, 
+and serial.
+•Memory is packetted, literally stored, and location addressable.
+•Not fault tolerant. One transistor goes and it no longer works.
+•Exact.
+•
+Static connectivity.
+•Applicable if well defined rules with precise input data.Neural Networks
+•Inductive Reasoning . Given input and 
+output data (training examples), we 
+construct the rules.
+•Computation is collective, asynchronous, and parallel.
+•Memory is distributed, internalized, and content addressable .
+•Fault tolerant, redundancy, and sharing of responsibilities.
+•Inexact.
+•
+Dynamic connectivity.
+•Applicable if rules are unknown or complicated, or if data is noisy or partial.Evolution of Neural Networks
+•Realized that the brain could solve many 
+problems much easier than even the best 
+computer
+–image recognition
+–speech recognition
+–pattern recognition
+Very easy for the brain but very difficult for a 
+computerEvolution of Neural Networks
+•Studied the brain 
+–Each neuron in the 
+brain has a relatively 
+simple function
+–But -10 billion of 
+them (60 trillion connections)
+–Act together to create 
+an incredible 
+processing unit
+–The brain is trained by 
+its environment
+–
+Learns by experience
+Compensates for 
+problems by massive 
+parallelismThe Biological Inspiration
+•The brain has been extensively studied by 
+scientists.
+•Vast complexity prevents all but rudimentary understanding.
+•Even the behaviour of an individual neuron is extremely complex
+•Engineers modified the neural models to make 
+them more useful
+•less like biology
+•kept much of the terminologyThe Structure of Neurons
+axon
+cell bodysynapse
+nucleus
+dendrites
+A neuron has a cell body, a branching input structure (the dendrite) and a 
+branching output structure (the axon)
+•Axons connect to dendrites via synapses.
+•Electro -chemical signals are propagated from the dendritic input, 
+through the cell body, and down the axon to other neurons•A neuron only fires if its input signal exceeds a certain 
+amount ( threshold) in a short time period.
+•Synapses vary in strength
+–Good connections allowing a large signal
+–Slight connections allow only a weak signal.
+–Synapses either:
+–Excitatory (stimulate)
+–Inhibitory (restrictive)The Structure of NeuronsBiological Analogy 
+•Brain Neuron
+•Artificial neuron
+(processing element)
+•Set of processing 
+elements (PEs) and connections (weights) with adjustable strengths
+f(net)Inputsw1
+w2
+wn
+X4X3
+X5X1
+X2
+Output
+LayerInputLayer
+Hidden LayerBenefits of Neural Networks
+•Pattern recognition, learning, classification, 
+generalization and abstraction, and interpretation of incomplete and noisy inputs
+•Provide some human problem -solving characteristics
+•Robust
+•Fast, flexible and easy to maintain
+•Powerful hybrid systems(Artificial) Neural networks (ANN)
+•ANN architecture
+(Artificial) Neural networks (ANN)
+•‘Neurons’ 
+–have 1 output but many inputs
+–Output is weighted sum of inputs
+–Threshold can be set
+•Gives non -linear response
+The Key Elements of Neural Networks
+•Neural computing requires a number of neurons , to be connected together into a 
+"neural network ". Neurons are arranged in layers .
+•Each neuron within the network is usually a simple processing unit which takes 
+one or more inputs and produces an output. At each neuron, every input has an associated " weight " which modifies the strength of each input . The neuron simply 
+adds together all the inputs and calculates an output to be passed on. 
+What is a Artificial Neural Network
+•The neural network is:
+–model
+–nonlinear (output is a nonlinear combination of 
+inputs)
+–input is numeric
+–output is numeric 
+–pre-and post -processing completed separate from 
+model
+Model:
+mathematical transformation
+of input to outputnumerical
+inputsnumerical
+outputsTransfer functions
+•The threshold, or transfer function, is generally non- linear. Linear (straight -line) 
+functions are limited because the output is simply proportional to the input. Linear 
+functions are not very useful. That was the problem in the earliest network models as noted in Minsky and Papert's book Perceptrons . 
+What can you do with an NN and what 
+not?
+•In principle, NNs can compute any computable function, i.e., they can do 
+everything a normal digital computer can do. Almost any mapping between vector spaces can be approximated to arbitrary precision by feedforward NNs 
+•In practice, NNs are especially useful for classification and function 
+approximation problems usually  when rules such as those that might be 
+used in an expert system cannot easily be applied.
+•NNs are, at least today, difficult to apply successfully to problems that concern manipulation of symbols and memory. (Artificial) Neural networks (ANN)
+•Training
+–Initialize weights for all neurons
+–Present input layer with e.g. spectral reflectance
+–Calculate outputs
+–Compare outputs with e.g. biophysical parameters
+–Update weights to attempt a match
+–Repeat until all examples presentedTraining method s
+•Supervised learning
+In supervised training, both the inputs and the outputs are provided. The network 
+then processes the inputs and compares its resulting outputs against the desired outputs. Errors are then propagated back through the system, causing the system to adjust the weights which control the network. This process occurs over and over as the weights are continually tweaked. The set of  data which enables the training is called the "training set ." During the training of  a network the same set of  data is processed 
+many times as the connection weights are ever refined.
+Example architectures : Multilayer perceptrons 
+•Unsupervised learning
+In unsupervised training, the network is provided with inputs but not with desired outputs. The system itself  must then decide what features it will use to group the input data. This is often referred to as self- organization or adaption. At the present time, 
+unsupervised learning is not well understood.  Example architectures : Kohonen, ARTFeedforword NNs
+•The basic structure off a feedforward Neural Network
+•The 'learning rule ”modifies the weights according to the input patterns that it is presented 
+with. In a sense, ANNs learn by example as do their biological counterparts .
+•When the desired output are known we have supervised learning or learning with a teacher.
+An overview of the 
+backpropagation
+1.A set of examples for training the network is assembled. Each case consists of a problem 
+statement (which represents the input into the network) and the corresponding solution (which represents the desired output from the network). 
+2.The input data is entered into the network via the input layer. 
+3.Each neuron in the network processes the input data with the resultant values steadily "percolating" through the network, layer by layer, until a result is generated by the output layer. 
+4.
+The actual output of the network is compared to expected output for that particular input. This results in an error value which represents the discrepancy between given input and 
+expected output. On the basis of this error value an of the connection weights in the network are gradually adjusted, working backwards from the output layer, through the hidden layer, and to the input layer, until the correct output is produced. Fine tuning the weights in this way has the effect of teaching the network how to produce the correct output for a particular input, i.e. the network learns . Backpropagation Network
+The Learning Rule
+•The delta rule is often utilized by the most common class of ANNs called 
+“backpropagational neural networks ”.
+•When a neural network is initially presented with a pattern it makes a random 
+'guess' as to what it might be. It then sees how far its answer was from the actual 
+one and makes an appropriate adjustment to its connection weights. 
+The Insides off
+Delta Rule
+•Backpropagation performs a gradient descent within the solution's vector space 
+towards a “global minimum ”.The error surface itself is a hyperparaboloid but is 
+seldom 'smooth' as is depicted in the graphic below. Indeed, in most problems, the 
+solution space is quite irregular with numerous 'pits' and 'hills' which may cause the network to settle down in a “ local min imum”which is not the best overall 
+solution.
+Recurrent Neural Networks
+A recurrent neural network is 
+one in which the outputs from the output layer are fed back to a set of input units (see figure below). This is in contrast to feed -forward networks, where 
+the outputs are connected only to the inputs of units in subsequent layers. 
+Neural networks of this kind are able to store information about time, and therefore they are particularly suitable for forecasting applications: they have been used with considerable 
+success for predicting several types of time series
+.Auto -associative NNs
+The auto -associative neural network is a special kind of MLP -in fact, it normally consists of two MLP 
+networks connected "back to back" (see figure below). The other distinguishing feature of auto -associative 
+networks is that they are trained with a target data set that is identical to the input data set. 
+In training, the network weights are adjusted until the outputs match the inputs, and the values assigned 
+to the weights reflect the relationships between the various input data elements. This property is useful in, for example, data validation: when invalid data is presented to the trained neural network, the learned 
+relationships no longer hold and it is unable to reproduce the correct output. Ideally, the match between 
+the actual and correct outputs would reflect the closeness of the invalid data to valid values. Auto -
+associative neural networks are also used in data compression applications. 
+Self Organising Maps (Kohonen)
+•The Self Organising Map or Kohonen network uses unsupervised learning. 
+•Kohonen networks have a single layer of units and, during training, clusters of units become 
+associated with different classes (with statistically similar properties) that are present in the training data. The Kohonen network is useful in clustering applications.
+Neural Network Terminology
+•ANN -artificial neural network
+•PE-processing element (neuron)
+•Exemplar -one individual  set of input/output data
+•Epoch -complete set of input/output data
+•Weight -the adjustable parameter on each connection that 
+scales the data passing through itANN Topologies/ Architectures
+5, 3, 2, 5, 3
+1, 0, 0, 1, 0
+5, 3, 2, 2, 1Inputs Weights
+PEs
+Outputs5, 3, 2, 5, 3
+Exemplar
+Epoch
+5, 3, 2, 5, 3
+5, 3, 2, 2, 1Inputs
+5, 3, 2, 5, 3Perceptron Multiple Layer Feedforward
+Recurrent/Feedback5, 3, 2, 5, 3
+1, 0, 0, 1, 0
+5, 3, 2, 2, 1InputsWeights
+5, 3, 2, 5, 3Weights
+WeightsPEs PEs PEs
+Hidden
+LayerHidden
+LayerOutput
+LayerOutput
+Time Lag Feedforward
+5, 3, 2, 5, 3Inputs
+5, 3, 2, 5, 3 Mem
+Mem
+Mem
+Mem
+Mem
+MemMemory StructureTypes of Layers
+•The input layer
+–Introduces input values into the network
+–No activation function or other processing
+•The hidden layer(s)
+–Perform classification of features
+–Two hidden layers are sufficient to solve any problem
+–Features imply more layers may be better
+•The output layer.
+–Functionally just like the hidden layers
+–Outputs are passed on to the world outside the neural network.What Makes NNs “Unique”
+•Neural networks are nonlinear models
+–Many other nonlinear models exist
+•mathematics required is usually involved or nonexistent. 
+–simplified nonlinear system
+–combinations of simple nonlinear functions
+•Neural networks are trained from the data
+–No expert knowledge is required beforehand
+–They can learn and adapt to changing conditions online
+•They are universal approximators
+–learn any model given enough data and processing elements
+•They have very few formal assumptions about the data
+–(e.g. no Gaussian requirements, etc.)How do neural nets work?
+TRAIN THE NETWORK:
+1. Introduce data 
+2. Computes an output3. Output compared to desired output4. Weights are modified to reduce error
+USE THE NETWORK:
+1. Introduce new data to the network2. Network computes an output based on its training
+inputoutputBrief Introduction to Generalization
+•Neural networks are very powerful, often toopowerful
+•Can overtrain a neural network
+–will perform very well on data that it was trained with
+–but poorly on test data
+•Never judge a network based upon training data results ONLY!The Learning Curve
+•We use the Mean Squared Error for training the network
+•A plot of Mean Squared Error versus training time (epoch 
+number) is called the learning curve
+•Rising learning curve is bad
+•Oscillating learning curve is usually bad
+•Decreasing learning curve is good
+•MSE is not always the best way to analyze the performance of the network (e.g. classification)Multiple Datasets
+•The most common solution to the “generalization” problem is 
+to divide your data into 3 sets:
+–Training data: used to train network
+–Cross Validation data: used to actively test the network 
+during training -used to stop training
+–Testing data: used to test the network after training
+–Production data: desired output is not known (implementation)•The multi -layer neural network (MNN) is the most commonly used network model for image classification in remote 
+sensing. MNN is usually implemented using the Backpropagation (BP) learning algorithm. 
+The learning process requires a training data set, i.e., a set of training patterns with inputs and corresponding desired 
+outputs. 
+•The essence of learning in MNNs is to find a suitable set of parameters that approximate an unknown input -output 
+relation. Learning in the network is achieved by minimizing the least square differences between the desired and the computed outputs to create an optimal network to best approximate the input- output relation on the restricted domain 
+covered by the training set. 
+•A typical MNN consists of one input layer, one or more hidden layers and one output layer
+•MNNs are known to be sensitive to many factors, such as the size and quality of training data set, network architecture, 
+learning rate, overfitting problems
+X
+1X
+2X
+3X
+4
+O
+1O
+2O
+3O
+4O
+5Input 
+Layer
+Hidden Layer
+Output Layer•In practical implementations of MNNs, it often happens that a well -trained network with a very 
+low training error fails to classify unseen patterns or produces a low generalization accuracy 
+when applied to a new data set. 
+•This phenomenon is called overfitting . This is partly because the over -training process makes 
+the network learning focus on specifics of this particular training data which are not the typical characteristics of the whole data set. Thus, it is important to use a cross- validation approach to 
+stop the training at an appropriate time
+•Basically , we collect two data sets: training data set and testing data set. During training only 
+the training data set is used to train the network. However, the classification performances with both testing and training data are computed and checked. The training will stop while the training error keeps decreasing and the testing performance starts to deteriorate. This parallel cross -validation approach can ensure that the trained network be an effective classifier to 
+generalize well to new/unseen data and can avoid wasting time to apply an ineffective network to classify other data.5/23/06 37
+NASA Intelligent Systems (IS) Program
+Intelligent Data Understanding (IDU)
+Automated Wildfire Detection 
+and Prediction Through 
+Artificial Neural Networks
+Jerry Miller (P.I.), NASA, GSFC
+Kirk Borne (Co -I), GMU
+Brian Thomas, University of Maryland 
+Zhenping Huang, University of Maryland 
+Yuechen Chi, GMU
+Donna McNamara, NOAA -NESDIS, Camp Springs, MD 
+George Serafino , NOAA -NESDIS, Camp Springs, MD  38Short Description of Wildfire Project
+•Automated Wildfire Detection (and Prediction)
+through Artificial Neural Networks (ANN)
+–Identify all wildfires in Earth- observing satellite images 
+–Train ANN to mimic human analysts’ classifications
+–Apply ANN to new data (from 3 remote- sensing 
+satellites:  GOES, AVHRR, MODIS)
+–Extend NOAA fire product from USA to the whole Earth
+39NOAA’S HAZARD MAPPING 
+SYSTEMNOAA’s Hazard Mapping System (HMS) isaninteractive processing system that allows
+trained satellite analysts tomanually integrate data from 3automated fire detection
+algorithms corresponding tothe GOES, AVHRR and MODIS sensors. The result isa
+quality controlled fireproduct ingraphic (Fig 1),ASCII (Table 1)and GISformats forthe
+continental US.
+Figure –Hazard Mapping System (HMS) Graphic Fire Product forday5/19/2003
+40OVERALL TASK OBJECTIVES
+To mimic the NOAA-NESDIS Fire Analysts’ subjective
+decision -making and fire detection algorithms with a 
+Neural Network in order to:
+remove subjectivity inresults
+improve automation &consistency
+allow NESDIS toexpand coverage globally
+Sources of subjectivity in Fire Analysts’ decision-making:
+Fire is not burning very hot, small in areal extent                   
+Fire is not burning much hotter than surrounding scene
+Dependency on Analysts’ “aggressiveness” in finding fires
+Determination of false detects41OLD FORMAT NEW FORMAT (asofMay 16,2003 )
+Lon, Lat Lon, Lat, Time, Satellite, Method ofDetection
+-80.531, 25.351 -80.597, 22.932, 1830, MODIS AQUA, MODIS
+-81.461, 29.072 -79.648, 34.913, 1829, MODIS, ANALYSIS
+-83.388, 30.360 -81.048, 33.195, 1829, MODIS, ANALYSIS
+-95.004, 30.949 -83.037, 36.219, 1829, MODIS, ANALYSIS
+-93.579, 30.459 -83.037, 36.219, 1829, MODIS, ANALYSIS
+-108.264, 27.116 -85.767, 49.517, 1805, AVHRR NOAA -16, FIMMA
+-108.195, 28.151 -84.465, 48.926, 2130, GOES -WEST, ABBA
+-108.551, 28.413 -84.481, 48.888, 2230, GOES -WEST, ABBA
+-108.574, 28.441 -84.521, 48.864, 2030, GOES -WEST, ABBA
+-105.987, 26.549 -84.557, 48.891, 1835, MODIS AQUA, MODIS
+-106.328, 26.291 -84.561, 48.881, 1655, MODIS TERRA, MODIS
+-106.762, 26.152 -84.561, 48.881, 1835, MODIS AQUA, MODIS
+-106.488, 26.006 -89.433, 36.827, 1700, MODIS TERRA, MODIS
+-106.516, 25.828 -89.750, 36.198, 1845, GOES, ANALYSISHazard Mapping System (HMS) ASCII Fire Product42SIMPLIFIED DATA EXTRACTION PROCEDURE
+Daily
+HMS ASCII 
+Fire Product
+Geographic 
+Coords (lat/lon)
+ENVI Function Call
+Conversion to Image
+Coords (row/col)Image Ref’sDATA:
+GOES (96 Files/day)
+AVHRR (25 Files/day)
+MODIS (14 Files/day)
+Filter Out
+Bad data pointsImageCoordsSpectral
+Data
+Neural Network
+Training Set43Neural Network Configuration
+for Wildfire Detection Neural Network
+Connections
+(weights)
+Connections
+(weights)
+Input
+Layer 0
+Hidden
+Layer 1Output
+Layer 2OutputClassificationBand A
+Inputs:1 -49
+Band B
+Inputs: 50 -98
+Band CInputs: 99 -147(fire / no -fire)44Typical Error Matrix
+(for MODIS instrument)
+Fire          NonFire       Totals
+Fire
+NonFireTotalsTRAINING DATA
+3007
+318
+(FN)3421 3103
+(TN)
+3276 3152 6428173
+(FP)2834
+(TP)True Positive False Positive
+False Negative True NegativeRESULTS45Typical Measures of Accuracy
+•Overall Accuracy                   =  (TP+TN)/(TP+TN+FP+FN)
+•Producer’s Accuracy (fire)      =   TP/(TP+FN)
+•Producer’s Accuracy (nonfire) =   TN/(FP+TN)
+•User’s Accuracy (fire)             =   TP/(TP+FP)
+•User’s Acuracy (nonfire)       =   TN/(TN+FN)
+Accuracy of our NN Classification
+•Overall Accuracy                   =   92.4%
+•Producer’s Accuracy (fire)      =   89.9%
+•Producer’s Accuracy (nonfire) =   94.7%
+•User’s Accuracy (fire)             =   94.2%
+•User’s Acuracy (nonfire)       =   90.7%
